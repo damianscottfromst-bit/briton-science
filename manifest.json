@@ -1,0 +1,51 @@
+{
+  "name": "Briton Science — EduAI Côte d'Ivoire",
+  "short_name": "Briton Science",
+  "description": "Plateforme IA d'exercices scolaires pour le système éducatif ivoirien — du CP1 à la Terminale",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07071a",
+  "theme_color": "#FFD700",
+  "lang": "fr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Générer un exercice",
+      "short_name": "Générer",
+      "description": "Créer un exercice IA",
+      "url": "/index.html#generate",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Corriger une copie",
+      "short_name": "Corriger",
+      "description": "Corriger avec l'IA",
+      "url": "/index.html#correct",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
