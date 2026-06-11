@@ -584,6 +584,122 @@ const MATIERES_FILIERE={
 'Pêche et Aquaculture':['Biologie aquatique','Aquaculture','Pisciculture','Gestion des ressources halieutiques','Nutrition des poissons','Techniques de production aquacole'],
 'Aquaculture':['Biologie aquatique','Aquaculture','Pisciculture','Gestion des ressources halieutiques','Nutrition des poissons','Techniques de production aquacole'],
 };
+// ===== MATIÈRES PAR FILIÈRE UNIVERSITAIRE (Universités publiques & privées — Côte d'Ivoire) =====
+const MATIERES_FILIERE_UNIV={
+// 1. Sciences juridiques, politiques et administratives
+'Droit privé':['Droit civil','Droit commercial','Droit du travail','Droit des affaires','Procédure civile','Droit international privé'],
+'Droit public':['Droit constitutionnel','Droit administratif','Droit fiscal','Droit international public','Finances publiques','Procédure pénale'],
+'Droit des affaires':['Droit commercial','Droit des sociétés','Droit fiscal','Droit du travail','Droit bancaire','Contrats commerciaux'],
+'Droit international':['Droit international public','Droit international privé','Relations internationales','Diplomatie','Droit communautaire'],
+'Sciences politiques':['Théorie politique','Relations internationales','Géopolitique','Gouvernance','Politiques publiques','Institutions politiques','Diplomatie'],
+'Administration publique':['Droit administratif','Gouvernance','Politiques publiques','Institutions politiques','Gestion publique','Finances publiques'],
+'Criminologie':['Droit pénal','Procédure pénale','Sociologie criminelle','Psychologie criminelle','Sciences forensiques'],
+'Gouvernance et administration territoriale':['Droit administratif','Gouvernance','Politiques publiques','Aménagement du territoire','Gestion des collectivités'],
+// 2. Sciences économiques et de gestion
+'Économie':['Microéconomie','Macroéconomie','Économie internationale','Économie du développement','Économétrie','Politique économique','Économie monétaire'],
+'Économie appliquée':['Microéconomie','Macroéconomie','Économétrie','Statistiques économiques','Économie internationale','Politique économique'],
+'Économie du développement':['Économie du développement','Macroéconomie','Économie internationale','Politiques publiques','Économétrie'],
+'Finance':['Finance d\'entreprise','Marchés financiers','Analyse financière','Gestion de portefeuille','Gestion des risques','Économie monétaire'],
+'Comptabilité':['Comptabilité générale','Comptabilité analytique','Comptabilité des sociétés','Fiscalité','Audit','Contrôle de gestion'],
+'Audit et contrôle de gestion':['Audit','Contrôle de gestion','Comptabilité approfondie','Gestion budgétaire','Analyse financière','Fiscalité'],
+'Banque':['Économie monétaire','Techniques bancaires','Gestion des crédits','Marchés financiers','Gestion des risques','Analyse financière'],
+'Assurance':['Techniques d\'assurance','Gestion des risques','Actuariat','Droit des assurances','Réassurance'],
+'Marketing':['Marketing stratégique','Études de marché','Comportement du consommateur','Marketing digital','Communication commerciale','Vente'],
+'Gestion des entreprises':['Management stratégique','Gestion de projet','Comptabilité','Finance','Marketing','Gestion des ressources humaines'],
+'Ressources humaines':['Gestion des ressources humaines','Droit du travail','Psychologie du travail','Gestion de la paie','Recrutement','Management'],
+'Logistique et transport':['Logistique','Gestion de la chaîne d\'approvisionnement','Transport','Gestion des stocks','Commerce international'],
+'Commerce international':['Commerce international','Économie internationale','Techniques du commerce extérieur','Logistique','Droit commercial international','Marketing international'],
+// 3. Lettres, Langues et Arts
+'Lettres modernes':['Littérature africaine','Littérature française','Critique littéraire','Linguistique','Stylistique','Grammaire'],
+'Lettres classiques':['Littérature classique','Latin','Grec ancien','Critique littéraire','Philologie'],
+'Linguistique':['Linguistique générale','Phonétique','Phonologie','Syntaxe','Sémantique','Sociolinguistique'],
+'Sciences du langage':['Linguistique générale','Phonétique','Syntaxe','Sémantique','Pragmatique','Sociolinguistique'],
+'Anglais':['Littérature anglaise','Grammaire anglaise','Phonétique','Traduction','Civilisation anglophone','Linguistique'],
+'Espagnol':['Littérature espagnole','Grammaire espagnole','Traduction','Civilisation hispanophone','Phonétique'],
+'Allemand':['Littérature allemande','Grammaire allemande','Traduction','Civilisation germanophone','Phonétique'],
+'Portugais':['Littérature portugaise','Grammaire portugaise','Traduction','Civilisation lusophone','Phonétique'],
+'Traduction et interprétation':['Traduction','Interprétation','Linguistique appliquée','Terminologie','Traductologie'],
+'Arts plastiques':['Histoire de l\'art','Dessin','Peinture','Sculpture','Arts visuels','Esthétique'],
+'Musique':['Théorie musicale','Solfège','Harmonie','Histoire de la musique','Composition','Ethnomusicologie'],
+'Théâtre':['Histoire du théâtre','Jeu d\'acteur','Mise en scène','Dramaturgie','Expression scénique'],
+'Cinéma et audiovisuel':['Histoire du cinéma','Réalisation','Montage','Scénario','Production audiovisuelle','Analyse filmique'],
+// 4. Sciences humaines et sociales
+'Histoire':['Histoire ancienne','Histoire moderne','Histoire contemporaine','Histoire de l\'Afrique','Méthodologie historique','Historiographie'],
+'Géographie':['Géographie physique','Géographie humaine','Cartographie','Aménagement du territoire','Système d\'information géographique (SIG)','Climatologie'],
+'Sociologie':['Sociologie générale','Sociologie urbaine','Sociologie du développement','Méthodologie de recherche','Sociologie du travail'],
+'Anthropologie':['Anthropologie sociale','Anthropologie culturelle','Ethnologie','Méthodologie de recherche','Anthropologie africaine'],
+'Philosophie':['Logique','Éthique','Philosophie politique','Histoire de la philosophie','Métaphysique','Épistémologie'],
+'Psychologie':['Psychologie générale','Psychologie sociale','Psychologie clinique','Psychologie du travail','Psychologie du développement','Méthodologie'],
+'Archéologie':['Préhistoire','Archéologie africaine','Méthodes de fouilles','Conservation du patrimoine','Anthropologie'],
+'Démographie':['Démographie générale','Statistiques démographiques','Analyse de population','Méthodologie','Sociologie'],
+'Sciences de l\'éducation':['Pédagogie','Psychopédagogie','Didactique','Sociologie de l\'éducation','Méthodologie de recherche','Évaluation'],
+'Communication':['Théories de la communication','Communication institutionnelle','Médias','Communication digitale','Relations publiques'],
+'Journalisme':['Techniques de rédaction','Reportage','Déontologie journalistique','Médias numériques','Communication','Droit de la presse'],
+// 5. Sciences fondamentales
+'Mathématiques':['Algèbre','Analyse','Géométrie','Probabilités','Statistiques','Calcul numérique','Topologie'],
+'Physique':['Mécanique','Électricité','Magnétisme','Thermodynamique','Optique','Physique quantique'],
+'Chimie':['Chimie générale','Chimie organique','Chimie minérale','Chimie analytique','Chimie physique'],
+'Informatique':['Algorithmique','Programmation','Bases de données','Réseaux informatiques','Intelligence artificielle','Génie logiciel'],
+'Statistiques':['Statistiques descriptives','Statistiques inférentielles','Probabilités','Analyse de données','Économétrie'],
+'Actuariat':['Mathématiques financières','Probabilités','Statistiques','Théorie du risque','Assurance vie','Finance'],
+'Sciences de la matière':['Mécanique','Thermodynamique','Chimie physique','Cristallographie','Physique des matériaux'],
+// 6. Sciences de la vie et de la Terre
+'Biologie':['Biologie cellulaire','Génétique','Microbiologie','Zoologie','Botanique','Écologie'],
+'Biochimie':['Biochimie structurale','Biochimie métabolique','Biologie moléculaire','Enzymologie','Biochimie clinique'],
+'Génétique':['Génétique fondamentale','Génétique moléculaire','Biologie moléculaire','Génie génétique','Génomique'],
+'Microbiologie':['Bactériologie','Virologie','Mycologie','Microbiologie médicale','Immunologie'],
+'Botanique':['Anatomie végétale','Physiologie végétale','Systématique végétale','Écologie végétale'],
+'Zoologie':['Anatomie animale','Physiologie animale','Systématique animale','Éthologie','Écologie animale'],
+'Écologie':['Écologie générale','Biodiversité','Climatologie','Gestion environnementale','Écosystèmes'],
+'Géologie':['Minéralogie','Pétrologie','Géophysique','Géochimie','Cartographie géologique','Tectonique'],
+'Hydrogéologie':['Hydrologie','Hydrogéologie','Géologie','Gestion des ressources en eau','Géophysique'],
+'Géophysique':['Sismologie','Géomagnétisme','Gravimétrie','Géophysique appliquée','Géologie'],
+'Sciences de l\'environnement':['Écologie','Gestion environnementale','Climatologie','Biodiversité','Pollution','Développement durable'],
+// 7. Sciences de la santé
+'Médecine':['Anatomie','Physiologie','Histologie','Pathologie','Pharmacologie','Sémiologie','Médecine interne'],
+'Pharmacie':['Pharmacologie','Toxicologie','Chimie pharmaceutique','Galénique','Pharmacognosie','Biochimie'],
+'Odontostomatologie (Médecine dentaire)':['Anatomie dentaire','Chirurgie buccale','Prothèse dentaire','Orthodontie','Parodontologie'],
+'Sage-femme':['Obstétrique','Gynécologie','Anatomie','Physiologie','Néonatologie','Soins prénatals'],
+'Infirmier':['Soins infirmiers','Anatomie','Physiologie','Pharmacologie','Santé publique','Éthique médicale'],
+'Biologie médicale':['Hématologie','Bactériologie','Parasitologie','Biochimie clinique','Immunologie','Anatomie pathologique'],
+'Santé publique':['Épidémiologie','Santé communautaire','Biostatistique','Gestion des systèmes de santé','Promotion de la santé'],
+'Nutrition':['Nutrition humaine','Diététique','Biochimie nutritionnelle','Santé publique','Microbiologie alimentaire'],
+'Kinésithérapie':['Anatomie','Physiologie','Biomécanique','Rééducation fonctionnelle','Techniques de massage'],
+// 8. Sciences et technologies
+'Génie informatique':['Programmation','Génie logiciel','Réseaux informatiques','Bases de données','Architecture des ordinateurs','Systèmes d\'exploitation'],
+'Génie logiciel':['Programmation','Architecture logicielle','Génie logiciel','Bases de données','Méthodes agiles','Tests logiciels'],
+'Réseaux et télécommunications':['Réseaux informatiques','Protocoles TCP/IP','Télécommunications','Fibre optique','Sécurité des réseaux','Téléphonie'],
+'Intelligence artificielle':['Apprentissage automatique','Réseaux de neurones','Traitement du langage naturel','Vision par ordinateur','Algorithmique','Statistiques'],
+'Cybersécurité':['Sécurité des réseaux','Cryptographie','Sécurité des systèmes','Hacking éthique','Forensique numérique'],
+'Génie électrique':['Électrotechnique','Machines électriques','Électronique de puissance','Automatismes','Réseaux électriques'],
+'Génie électronique':['Électronique analogique','Électronique numérique','Microprocesseurs','Traitement du signal','Systèmes embarqués'],
+'Génie énergétique':['Thermodynamique','Énergies renouvelables','Efficacité énergétique','Transferts thermiques','Production d\'énergie'],
+'Génie mécanique':['Thermodynamique','Mécanique des fluides','Fabrication mécanique','Productique','Résistance des matériaux','Conception mécanique'],
+'Génie industriel':['Gestion de production','Logistique industrielle','Qualité','Maintenance industrielle','Productique','Gestion de projet'],
+'Génie civil':['Résistance des matériaux','Béton armé','Hydraulique','Géotechnique','Topographie','Mécanique des structures'],
+'Bâtiment et travaux publics':['Béton armé','Résistance des matériaux','Topographie','Géotechnique','Conduite de travaux','Métré'],
+// 9. Mines, Énergie et Ressources naturelles
+'Mines et géologie':['Géologie minière','Exploitation minière','Forage','Géophysique','Mécanique des roches','Minéralogie'],
+'Géologie pétrolière':['Géologie pétrolière','Sédimentologie','Forage pétrolier','Géophysique','Réservoirs pétroliers'],
+'Pétrole et gaz':['Géologie pétrolière','Forage pétrolier','Production pétrolière','Raffinage','Transport des hydrocarbures'],
+'Métallurgie':['Métallurgie extractive','Métallurgie physique','Matériaux métalliques','Traitement des minerais','Fonderie'],
+'Énergies renouvelables':['Énergie solaire','Énergie hydraulique','Énergie éolienne','Efficacité énergétique','Biomasse'],
+'Sciences des matériaux':['Cristallographie','Physique des matériaux','Métallurgie','Polymères','Céramiques','Caractérisation des matériaux'],
+'Maintenance industrielle':['Maintenance préventive','Maintenance corrective','Fiabilité','Mécanique','Électrotechnique','Automatismes'],
+// 10. Agriculture, Environnement et Agro-industrie
+'Agronomie':['Agronomie générale','Pédologie','Fertilité des sols','Agroécologie','Irrigation','Phytotechnie'],
+'Agriculture tropicale':['Agronomie tropicale','Cultures vivrières','Cultures de rente','Pédologie','Protection des végétaux'],
+'Productions végétales':['Horticulture','Arboriculture','Cultures vivrières','Protection des végétaux','Amélioration des plantes'],
+'Productions animales':['Zootechnie','Nutrition animale','Reproduction animale','Santé animale','Élevage'],
+'Agroalimentaire':['Technologie alimentaire','Microbiologie alimentaire','Contrôle qualité','Conservation des aliments','Biochimie alimentaire'],
+'Biotechnologies':['Biologie moléculaire','Génie génétique','Microbiologie industrielle','Culture cellulaire','Bioprocédés'],
+'Eaux et forêts':['Foresterie','Écologie forestière','Gestion forestière','Faune sauvage','Conservation de la biodiversité'],
+'Gestion de l\'environnement':['Gestion des déchets','Traitement des eaux','Développement durable','Études d\'impact environnemental','Écologie'],
+'Développement durable':['Développement durable','Gestion environnementale','Économie verte','Changement climatique','Énergies renouvelables'],
+'Aquaculture':['Biologie aquatique','Aquaculture','Pisciculture','Nutrition des poissons','Gestion des ressources halieutiques'],
+'Pêche':['Biologie marine','Techniques de pêche','Gestion des ressources halieutiques','Océanographie','Aquaculture'],
+'Gestion des ressources naturelles':['Gestion environnementale','Biodiversité','Foresterie','Gestion des eaux','Développement durable'],
+};
 const SUBJECTS=[
 {id:'maths',label:'Mathématiques',labelEN:'Mathematics',icon:'∑',color:'#6C63FF'},
 {id:'francais',label:'Français',labelEN:'French',icon:'Aa',color:'#FF6B6B'},
@@ -949,8 +1065,10 @@ return `
 ${list.map(g=>`<optgroup label="${g.groupe}" style="background:#0f0f28;color:#E9C46A;">${g.items.map(f=>`<option value="${f.replace(/"/g,'')}" ${S.filiere===f?'selected':''} style="background:#0f0f28;color:#f0f0f8;">${f}</option>`).join('')}</optgroup>`).join('')}
 </select>
 ${S.filiere?`<div style="font-size:10px;color:#2EC4B6;margin-bottom:10px;">✓ Filière sélectionnée : ${S.filiere}</div>`:`<div style="font-size:10px;color:#666;font-style:italic;margin-bottom:10px;">${isUniv?'Choisissez votre filière universitaire pour des contenus spécialisés, ou laissez vide.':'Choisissez une filière pour des exercices spécialisés, ou laissez vide pour le tronc commun.'}</div>`}
-${(!isUniv&&S.filiere&&MATIERES_FILIERE[S.filiere])?(()=>{
-const mats=MATIERES_FILIERE[S.filiere];
+${(()=>{
+const dico=isUniv?MATIERES_FILIERE_UNIV:MATIERES_FILIERE;
+if(!S.filiere||!dico[S.filiere])return '';
+const mats=dico[S.filiere];
 return `
 <div class="app-label" style="margin-top:4px;">Matière de la filière — optionnel</div>
 <select onchange="S.filiereMatiere=this.value;render()" style="width:100%;padding:11px 14px;border-radius:9px;background:rgba(255,255,255,0.05);border:1.5px solid rgba(46,196,182,0.3);color:#f0f0f8;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;margin-bottom:6px;cursor:pointer;">
@@ -963,7 +1081,7 @@ ${MATIERES_TRANSVERSALES.map(m=>`<option value="${m.replace(/"/g,'')}" ${S.filie
 </optgroup>
 </select>
 ${S.filiereMatiere?`<div style="font-size:10px;color:#2EC4B6;margin-bottom:10px;">✓ Matière : ${S.filiereMatiere}</div>`:'<div style="font-size:10px;color:#666;font-style:italic;margin-bottom:10px;">Choisissez la matière précise de la filière pour un contenu ciblé.</div>'}
-`;})():''}
+`;})()}
 `;})():''}
 
 ${getLevelLabel()?`<div class="level-badge" style="background:${cycle?.color||'#6C63FF'}18;border:1px solid ${cycle?.color||'#6C63FF'}44;color:${cycle?.color||'#6C63FF'};margin-bottom:16px;">
