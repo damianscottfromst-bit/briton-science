@@ -725,13 +725,14 @@ if(S.cycle==='superieur'&&S.filiere){base+=` (Filière : ${S.filiere}`;if(S.fili
 return base;
 }
 function getCycle(){return CYCLES.find(x=>x.id===S.cycle);}
-async function callClaude(messages,system,retries){
+async function callClaude(messages,system,retries,maxTokens){
 if(retries===undefined)retries=2;
+if(maxTokens===undefined)maxTokens=2000;
 try{
 const r=await fetch('/api/claude',{
 method:'POST',
 headers:{'Content-Type':'application/json'},
-body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2000,system,messages})
+body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system,messages})
 });
 if(!r.ok){
 const err=await r.json().catch(()=>({}));
@@ -739,7 +740,7 @@ const msg=err?.error||'HTTP '+r.status;
 // Réessayer automatiquement en cas de timeout (504) ou erreur serveur (502/503)
 if((r.status===504||r.status===502||r.status===503)&&retries>0){
 await new Promise(res=>setTimeout(res,800));
-return callClaude(messages,system,retries-1);
+return callClaude(messages,system,retries-1,maxTokens);
 }
 throw new Error(msg);
 }
@@ -748,10 +749,40 @@ return d.content?.map(b=>b.text||'').join('\n')||'';
 }catch(e){
 if(retries>0&&/network|fetch|timeout|504|502|503/i.test(e.message)){
 await new Promise(res=>setTimeout(res,800));
-return callClaude(messages,system,retries-1);
+return callClaude(messages,system,retries-1,maxTokens);
 }
 throw e;
 }
+}
+// Appel avec continuation automatique : si la réponse est coupée (sujet long),
+// on relance pour compléter, jusqu'à 3 fois, et on assemble le tout.
+async function callClaudeFull(messages,system,maxTokens){
+if(maxTokens===undefined)maxTokens=8000;
+let full='';
+let convo=messages.slice();
+for(let i=0;i<4;i++){
+const r=await fetch('/api/claude',{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system,messages:convo})
+});
+if(!r.ok){
+const err=await r.json().catch(()=>({}));
+const msg=err?.error||'HTTP '+r.status;
+if((r.status===504||r.status===502||r.status===503)&&i<3){await new Promise(res=>setTimeout(res,800));continue;}
+throw new Error(msg);
+}
+const d=await r.json();
+const part=d.content?.map(b=>b.text||'').join('\n')||'';
+full+=(full?'\n':'')+part;
+// Si la réponse a été coupée par la limite de longueur, on demande la suite
+if(d.stop_reason==='max_tokens'){
+convo=convo.concat([{role:'assistant',content:part},{role:'user',content:'Continue exactement là où tu t\'es arrêté, sans rien répéter, jusqu\'à terminer la correction de TOUT le sujet (tous les exercices et problèmes restants).'}]);
+}else{
+break;
+}
+}
+return full;
 }
 function initApp(){S={...S,role:null,cycle:null,sub:null,subject:null,topic:'',tab:0,filiere:'',filiereMatiere:'',genMode:'',generated:'',exerciseForCorrect:'',studentAnswer:'',correction:'',loading:false,pdfText:'',pdfName:''};render();}
 function render(){document.getElementById('app-root').innerHTML=buildHTML();bindEvents();typesetMath();}
@@ -1307,7 +1338,7 @@ const prompt=LANG==='en'
 :(isLesson
 ?`Crée un cours complet et détaillé sur "${S.topic}" pour un élève de ${getLevelLabel()} en Côte d'Ivoire selon le programme ivoirien officiel.\nStructure :\n1) Objectifs pédagogiques\n2) Définitions et notions clés\n3) Théorie complète avec explications\n4) Exemples résolus étape par étape\n5) Exercices d'application avec corrigés`
 :`Génère un exercice de ${subj.label} sur "${S.topic}" pour un élève de ${getLevelLabel()} en Côte d'Ivoire selon le programme ivoirien. 3 à 5 questions variées avec un barème.`);
-try{S.generated=await callClaude([{role:'user',content:prompt}],system);}
+try{S.generated=await callClaude([{role:'user',content:prompt}],system,2,5000);}
 catch(e){console.error(e);S.generated=/504|timeout/i.test(e.message)?'⏳ La génération a pris trop de temps. Veuillez réessayer (sujet peut-être trop large — essayez un thème plus précis).':'❌ '+e.message;}
 S.loading=false;render();
 }
@@ -1322,8 +1353,8 @@ S.loading=true;S.correction='';render();
 const langInstr2=LANG==='en'?'Always respond in English.':'Réponds toujours en français.';
 const hasAnswer=S.studentAnswer.trim().length>0;
 const system=hasAnswer
-?`Tu es un professeur bienveillant et expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Sois encourageant, précis et adapte ton feedback au niveau de l'élève. Donne toujours : 1) Note /20 justifiée 2) Points positifs 3) Erreurs expliquées 4) Conseils personnalisés.`
-:`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Rédige un corrigé détaillé, clair et bien structuré de l'exercice, avec toutes les étapes de résolution et les réponses finales. Sois concis pour répondre rapidement.`;
+?`Tu es un professeur bienveillant et expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Sois encourageant, précis et adapte ton feedback au niveau de l'élève. Donne toujours : 1) Note /20 justifiée 2) Points positifs 3) Erreurs expliquées 4) Conseils personnalisés. IMPORTANT : corrige la TOTALITÉ du sujet, tous les exercices ET tous les problèmes, sans en omettre aucun, même si le sujet est long (plusieurs pages).`
+:`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Rédige un corrigé détaillé, clair et bien structuré. IMPORTANT : corrige la TOTALITÉ du sujet du début à la fin — TOUS les exercices ET TOUS les problèmes (y compris les études de fonctions, exponentielle, logarithme, etc.), sans en omettre aucun, même si le sujet fait plusieurs pages. Traite chaque question avec toutes les étapes de résolution et les réponses finales. Ne t'arrête pas avant d'avoir corrigé l'intégralité du sujet.`;
 const lvl=getLevelLabel()||'non précisé';
 const ans=S.studentAnswer;
 try{
@@ -1360,7 +1391,7 @@ const prompt=hasAnswer
 :`Exercice (${lvl}, Côte d'Ivoire) :\n---\n${S.exerciseForCorrect}\n---\nRédige le corrigé complet et détaillé, avec toutes les étapes de résolution et les réponses finales.`);
 messages=[{role:'user',content:prompt}];
 }
-S.correction=await callClaude(messages,system);
+S.correction=await callClaudeFull(messages,system,8000);
 }catch(e){console.error(e);S.correction=/504|timeout/i.test(e.message)?'⏳ La correction a pris trop de temps. Veuillez réessayer.':'❌ '+e.message+' — Vérifiez votre connexion internet.';}
 S.loading=false;render();
 }
