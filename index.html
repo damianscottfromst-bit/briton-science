@@ -170,7 +170,7 @@ devtoolsOpen = false;
     
     <div style="text-align:center;margin-top:20px;font-size:10px;color:#555;font-family:'DM Sans',sans-serif;">
       🔒 Accès réservé aux utilisateurs autorisés<br>
-      <span style="color:#444;">Briton Science © 2025</span>
+      <span style="color:#444;">Briton Science © 2026</span>
     </div>
   </div>
 </div>
@@ -455,12 +455,18 @@ devtoolsOpen = false;
         </div>
         <div class="ft-col">
           <div class="ft-col-title" id="ft-c3">Informations</div>
-          <a>À propos de nous</a><a>Contact</a><a>Support</a>
+          <a onclick="showAbout()"><span id='ft-about'>À propos de nous</span></a>
+          <a href="mailto:trohsalomon@gmail.com"><span id='ft-contact'>Contact</span></a>
+          <a href="https://wa.me/2250758405178?text=Bonjour%2C%20j%27ai%20besoin%20d%27aide%20sur%20Briton%20Science" target="_blank" rel="noopener"><span id='ft-support'>Support</span></a>
         </div>
       </div>
       <div class="ft-bottom">
-        <div class="ft-copy" id="ft-copy">© 2025 Briton Science · Tous droits réservés</div>
+        <div class="ft-copy" id="ft-copy">© 2026 Briton Science · Tous droits réservés</div>
         <div id='ft-flag' style="font-size:11px;color:rgba(248,243,232,0.28);">🇨🇮 Fait avec fierté pour la Côte d'Ivoire</div>
+      </div>
+      <div style="border-top:1px solid rgba(255,215,0,0.08);margin-top:18px;padding-top:18px;display:flex;gap:24px;flex-wrap:wrap;justify-content:center;font-size:12px;">
+        <a href="mailto:trohsalomon@gmail.com" style="color:rgba(248,243,232,0.55);text-decoration:none;display:inline-flex;align-items:center;gap:7px;">📧 trohsalomon@gmail.com</a>
+        <a href="https://wa.me/2250758405178?text=Bonjour%2C%20j%27ai%20besoin%20d%27aide%20sur%20Briton%20Science" target="_blank" rel="noopener" style="color:rgba(46,196,182,0.8);text-decoration:none;display:inline-flex;align-items:center;gap:7px;">💬 WhatsApp : +225 07 58 40 51 78</a>
       </div>
     </div>
   </footer>
@@ -484,6 +490,37 @@ devtoolsOpen = false;
 document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
 document.getElementById('page-'+id).classList.add('active');
 window.scrollTo(0,0);
+}
+function showAbout(){
+const isEN=(typeof LANG!=='undefined'&&LANG==='en');
+const txt=isEN?{
+t:'About Briton Science',
+b:'Briton Science is an AI-powered educational platform dedicated to academic excellence in Côte d\'Ivoire. From preschool to higher education (university and grandes écoles), it generates tailored courses and exercises, and provides detailed corrections aligned with the Ivorian curriculum.',
+m:'Our mission: make quality education accessible to every Ivorian student and support teachers in their daily work.',
+c:'Contact us',close:'Close'
+}:{
+t:'À propos de Briton Science',
+b:'Briton Science est une plateforme éducative alimentée par l\'intelligence artificielle, dédiée à l\'excellence académique en Côte d\'Ivoire. De la maternelle au supérieur (université et grandes écoles), elle génère des cours et exercices sur mesure et fournit des corrigés détaillés conformes au programme ivoirien.',
+m:'Notre mission : rendre une éducation de qualité accessible à chaque élève ivoirien et accompagner les enseignants dans leur travail quotidien.',
+c:'Nous contacter',close:'Fermer'
+};
+let ov=document.getElementById('about-modal');
+if(ov)ov.remove();
+ov=document.createElement('div');
+ov.id='about-modal';
+ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(5,5,16,0.82);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;animation:fadeIn 0.3s ease;';
+ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+ov.innerHTML=`<div style="max-width:540px;width:100%;background:linear-gradient(135deg,#0f0f28,#14142e);border:1px solid rgba(255,215,0,0.25);border-radius:16px;padding:34px 30px;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
+<div style="font-family:'Cinzel',serif;font-size:20px;font-weight:800;color:#FFD700;margin-bottom:18px;">✦ ${txt.t}</div>
+<p style="font-size:14px;line-height:1.85;color:#d8d8ea;margin-bottom:16px;">${txt.b}</p>
+<p style="font-size:14px;line-height:1.85;color:#9990cc;font-style:italic;margin-bottom:22px;">${txt.m}</p>
+<div style="font-family:'Cinzel',serif;font-size:11px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:12px;">${txt.c}</div>
+<a href="mailto:trohsalomon@gmail.com" style="display:inline-flex;align-items:center;gap:8px;color:#d8d8ea;text-decoration:none;font-size:13px;margin-bottom:10px;">📧 trohsalomon@gmail.com</a><br>
+<a href="https://wa.me/2250758405178?text=Bonjour%2C%20j%27ai%20besoin%20d%27aide%20sur%20Briton%20Science" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;color:#2EC4B6;text-decoration:none;font-size:13px;">💬 WhatsApp : +225 07 58 40 51 78</a>
+<button onclick="document.getElementById('about-modal').remove()" style="position:absolute;top:16px;right:18px;background:none;border:none;color:#9990cc;font-size:22px;cursor:pointer;line-height:1;">×</button>
+<div style="margin-top:26px;text-align:right;"><button onclick="document.getElementById('about-modal').remove()" style="padding:9px 22px;background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a;border:none;border-radius:8px;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1px;cursor:pointer;">${txt.close}</button></div>
+</div>`;
+document.body.appendChild(ov);
 }
 const pc=document.getElementById('particles');
 for(let i=0;i<16;i++){
@@ -906,7 +943,7 @@ hr{border:none;border-top:1px solid #ccc;margin:14px 0;}
 <div class="date">Document généré le ${date}</div>
 </div>
 <div class="content">${content}</div>
-<div class="footer">Briton Science © 2025 — briton-science.netlify.app</div>
+<div class="footer">Briton Science © 2026 — briton-science.pages.dev</div>
 </body></html>`;
 }
 
@@ -1008,7 +1045,7 @@ td{border:1px solid #ccc;padding:6px 10px;color:#1a1a2e;}
 <!-- Pied de page Word (zone protégée) -->
 <div style="mso-element:footer" id="f1">
 <p class="MsoFooter" style="text-align:center;font-size:9px;color:#999;">
-Briton Science © 2025 — briton-science.netlify.app — Document généré le ${date}
+Briton Science © 2026 — briton-science.pages.dev — Document généré le ${date}
 </p>
 </div>
 <!-- Corps du document (modifiable) -->
@@ -1434,8 +1471,9 @@ cta_sub:"L'excellence académique ivoirienne, amplifiée par l'intelligence arti
 cta1:"✦ Accéder Gratuitement", cta2:"En savoir plus →",
 ft_tag:"La plateforme d'excellence éducative pour la Côte d'Ivoire, de la Maternelle au Supérieur.",
 ft_c1:'Application', ft_c2:'Niveaux', ft_c3:'Informations',
+ft_about:'À propos de nous', ft_contact:'Contact', ft_support:'Support',
 ft_l1:'Générer un exercice',ft_l2:'Corriger une copie',ft_l3:'Suivi de progression',
-ft_copy:"© 2025 Briton Science · Tous droits réservés",
+ft_copy:"© 2026 Briton Science · Tous droits réservés",
 ft_flag:"🇨🇮 Fait avec fierté pour la Côte d'Ivoire",
 app_eyebrow:"🇨🇮 Plateforme éducative ivoirienne",
 app_subtitle:"Génération · Correction · Suivi — du CP1 à la Terminale",
@@ -1497,8 +1535,9 @@ cta_sub:"Ivorian academic excellence, amplified by artificial intelligence.",
 cta1:"✦ Access for Free", cta2:"Learn more →",
 ft_tag:"The educational excellence platform for Côte d'Ivoire, from Kindergarten to University.",
 ft_c1:'Application', ft_c2:'Levels', ft_c3:'Information',
+ft_about:'About us', ft_contact:'Contact', ft_support:'Support',
 ft_l1:'Generate an exercise',ft_l2:'Correct a paper',ft_l3:'Progress tracking',
-ft_copy:"© 2025 Briton Science · All rights reserved",
+ft_copy:"© 2026 Briton Science · All rights reserved",
 ft_flag:"🇨🇮 Made with pride for Côte d'Ivoire",
 app_eyebrow:"🇨🇮 Ivorian educational platform",
 app_subtitle:"Generation · Correction · Tracking — from CP1 to Terminale",
@@ -1568,6 +1607,7 @@ setH('cta-sub', t('cta_sub')); setT('cta-btn1', t('cta1')); setT('cta-btn2', t('
 setH('ft-tag', t('ft_tag'));
 setH('ft-c1', t('ft_c1')); setH('ft-c2', t('ft_c2')); setH('ft-c3', t('ft_c3'));
 setT('ft-l1', t('ft_l1')); setT('ft-l2', t('ft_l2')); setT('ft-l3', t('ft_l3'));
+setT('ft-about', t('ft_about')); setT('ft-contact', t('ft_contact')); setT('ft-support', t('ft_support'));
 setT('ft-copy', t('ft_copy')); setT('ft-flag', t('ft_flag'));
 document.documentElement.lang = LANG;
 }
