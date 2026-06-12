@@ -336,7 +336,7 @@ devtoolsOpen = false;
   
   <div class="stats-bar">
     <div class="stats-inner">
-      <div class="stat-item reveal"><div class="stat-num gold-text">5</div><div class="stat-label" id="stat1">Cycles Scolaires</div><div class="stat-div"></div></div>
+      <div class="stat-item reveal"><div class="stat-num gold-text">4</div><div class="stat-label" id="stat1">Cycles Scolaires</div><div class="stat-div"></div></div>
       <div class="stat-item reveal" style="transition-delay:.1s"><div class="stat-num gold-text">20+</div><div class="stat-label" id="stat2">Niveaux de Classe</div><div class="stat-div"></div></div>
       <div class="stat-item reveal" style="transition-delay:.2s"><div class="stat-num gold-text">6</div><div class="stat-label" id="stat3">Matières Couvertes</div><div class="stat-div"></div></div>
       <div class="stat-item reveal" style="transition-delay:.3s"><div class="stat-num gold-text">IA</div><div class="stat-label" id="stat4">Correction Instantanée</div><div class="stat-div"></div></div>
@@ -859,6 +859,13 @@ if(els.length){window.MathJax.typesetPromise([...els]).catch(()=>{});}
 // Convertit le Markdown en HTML en protégeant les formules LaTeX
 function mdFormat(text){
 if(!text)return '';
+// 0. Protéger les figures SVG (géométrie, courbes) pour qu'elles s'affichent
+const svgs=[];
+text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
+// Rendre le SVG responsive et centré
+let svg=m.replace(/<svg/i,'<svg style="max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"');
+svgs.push(svg);return '\u0001'+(svgs.length-1)+'\u0001';
+});
 // 1. Protéger les formules LaTeX ($...$ et $$...$$)
 const math=[];
 text=text.replace(/\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$/g,m=>{math.push(m);return '\u0000'+(math.length-1)+'\u0000';});
@@ -903,6 +910,8 @@ text=text.replace(/<br>(<(h1|h2|h3|hr))/g,'$1');
 // Nettoyer les <br> parasites autour/dans les tableaux
 text=text.replace(/<br>\s*(<\/?(table|thead|tbody|tr|th|td)[^>]*>)/g,'$1');
 text=text.replace(/(<\/?(table|thead|tbody|tr|th|td)[^>]*>)\s*<br>/g,'$1');
+// Restaurer les figures SVG et nettoyer les <br> autour
+text=text.replace(/(<br>)?\s*\u0001(\d+)\u0001\s*(<br>)?/g,(m,a,i)=>svgs[+i]);
 return text;
 }
 
@@ -1401,6 +1410,16 @@ if(isTermD)ivoireRules+=' La série D est scientifique mais moins poussée que l
 if(S.cycle==='primaire'){
 ivoireRules+=' Niveau PRIMAIRE ('+lvlLabel+') : adresse-toi à un jeune enfant. Utilise un langage très simple, des phrases courtes, des exemples concrets de la vie quotidienne ivoirienne (marché, famille, école, animaux), un ton chaleureux et encourageant. Évite tout vocabulaire trop technique. Les consignes doivent être claires et adaptées à l\'âge.';
 }
+// Détection des sujets nécessitant une figure ou une courbe
+const topicLow=(S.topic||'').toLowerCase();
+const needsFigure=/g[ée]om[ée]trie|figure|triangle|cercle|carr[ée]|rectangle|losange|trap[èe]ze|parall[ée]logramme|angle|polygone|sph[èe]re|c[ôo]ne|cube|pyramide|prisme|cylindre|solide|sym[ée]trie|vecteur|rep[èe]re|construction/.test(topicLow);
+const needsCurve=/fonction|courbe|exponentielle|logarithme|d[ée]riv[ée]e|limite|asymptote|tangente|parabole|variation|repr[ée]sentation graphique|tableau de variation|[ée]tude de fonction/.test(topicLow);
+if(needsFigure||needsCurve){
+ivoireRules+=' IMPORTANT — REPRÉSENTATION VISUELLE : ce sujet nécessite une figure. Tu DOIS inclure dans ta réponse une figure dessinée en SVG (balise <svg>...</svg>) claire, propre et complète, directement intégrée dans le texte là où c\'est pertinent.';
+if(needsFigure)ivoireRules+=' Dessine la ou les figures géométriques avec leurs sommets nommés (A, B, C...), les longueurs, les angles marqués, les codages (segments égaux, angles droits avec un petit carré). Utilise un viewBox adapté, des traits noirs nets sur fond blanc, des étiquettes lisibles.';
+if(needsCurve)ivoireRules+=' Trace la courbe représentative dans un repère orthonormé avec : les axes (Ox, Oy) gradués et fléchés, l\'origine O, la courbe tracée avec précision, ET si pertinent : les asymptotes (en pointillés rouges), les tangentes remarquables (en pointillés bleus), les droites demandées, les branches paraboliques, les points particuliers (intersections, extremums). Nomme chaque élément. Utilise un viewBox d\'au moins 400x400, fond blanc, courbe épaisse colorée, axes noirs.';
+ivoireRules+=' Le SVG doit être valide, autonome et joliment présenté. N\'utilise PAS de balise <img>, dessine tout en SVG natif (<path>, <line>, <circle>, <polygon>, <text>, etc.).';
+}
 const system=isLesson
 ?`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). Tu rédiges des cours pédagogiques complets et structurés adaptés au programme ivoirien.${ivoireRules} ${langInstr} Formate bien avec des titres et sections claires. Sois pédagogue mais concis pour répondre rapidement.`
 :`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). Tu crées des exercices pédagogiques adaptés au programme scolaire ivoirien.${ivoireRules} ${langInstr} Formate bien avec des numéros et consignes précises. Va à l'essentiel, sois clair et concis pour répondre rapidement.`;
@@ -1411,7 +1430,7 @@ const prompt=LANG==='en'
 :(isLesson
 ?`Crée un cours complet et détaillé sur "${S.topic}" pour un élève de ${getLevelLabel()} en Côte d'Ivoire selon le programme ivoirien officiel.\nStructure :\n1) Objectifs pédagogiques\n2) Définitions et notions clés\n3) Théorie complète avec explications\n4) Exemples résolus étape par étape\n5) Exercices d'application avec corrigés`
 :`Génère un exercice de ${subj.label} sur "${S.topic}" pour un élève de ${getLevelLabel()} en Côte d'Ivoire selon le programme ivoirien. 3 à 5 questions variées avec un barème.`);
-try{S.generated=await callClaude([{role:'user',content:prompt}],system,2,5000);}
+try{S.generated=await callClaude([{role:'user',content:prompt}],system,2,(needsFigure||needsCurve)?7000:5000);}
 catch(e){console.error(e);S.generated=/504|timeout/i.test(e.message)?'⏳ La génération a pris trop de temps. Veuillez réessayer (sujet peut-être trop large — essayez un thème plus précis).':'❌ '+e.message;}
 S.loading=false;render();
 }
@@ -1425,9 +1444,10 @@ if(!S.exerciseForCorrect.trim()&&!S.pdfText)return;
 S.loading=true;S.correction='';render();
 const langInstr2=LANG==='en'?'Always respond in English.':'Réponds toujours en français.';
 const hasAnswer=S.studentAnswer.trim().length>0;
+const svgInstr=' Si le sujet comporte une étude de fonction, une courbe, une représentation graphique, ou une figure géométrique, tu DOIS la dessiner en SVG (balise <svg>...</svg>) directement dans le corrigé : pour une courbe, trace un repère orthonormé avec axes gradués et fléchés, la courbe précise, et tous les éléments demandés (asymptotes en pointillés rouges, tangentes en pointillés bleus, droites, branches paraboliques, points particuliers nommés) ; pour une figure géométrique, dessine-la avec sommets nommés, longueurs, angles et codages. Fond blanc, traits nets, viewBox d\'au moins 400x400, tout dessiné en SVG natif (pas de <img>).';
 const system=hasAnswer
-?`Tu es un professeur bienveillant et expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Sois encourageant, précis et adapte ton feedback au niveau de l'élève. Donne toujours : 1) Note /20 justifiée 2) Points positifs 3) Erreurs expliquées 4) Conseils personnalisés. IMPORTANT : corrige la TOTALITÉ du sujet, tous les exercices ET tous les problèmes, sans en omettre aucun, même si le sujet est long (plusieurs pages).`
-:`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Rédige un corrigé détaillé, clair et bien structuré. IMPORTANT : corrige la TOTALITÉ du sujet du début à la fin — TOUS les exercices ET TOUS les problèmes (y compris les études de fonctions, exponentielle, logarithme, etc.), sans en omettre aucun, même si le sujet fait plusieurs pages. Traite chaque question avec toutes les étapes de résolution et les réponses finales. Ne t'arrête pas avant d'avoir corrigé l'intégralité du sujet.`;
+?`Tu es un professeur bienveillant et expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Sois encourageant, précis et adapte ton feedback au niveau de l'élève. Donne toujours : 1) Note /20 justifiée 2) Points positifs 3) Erreurs expliquées 4) Conseils personnalisés. IMPORTANT : corrige la TOTALITÉ du sujet, tous les exercices ET tous les problèmes, sans en omettre aucun, même si le sujet est long (plusieurs pages).${svgInstr}`
+:`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Rédige un corrigé détaillé, clair et bien structuré. IMPORTANT : corrige la TOTALITÉ du sujet du début à la fin — TOUS les exercices ET TOUS les problèmes (y compris les études de fonctions, exponentielle, logarithme, etc.), sans en omettre aucun, même si le sujet fait plusieurs pages. Traite chaque question avec toutes les étapes de résolution et les réponses finales. Ne t'arrête pas avant d'avoir corrigé l'intégralité du sujet.${svgInstr}`;
 const lvl=getLevelLabel()||'non précisé';
 const ans=S.studentAnswer;
 try{
