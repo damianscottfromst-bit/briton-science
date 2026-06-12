@@ -959,6 +959,50 @@ svg+='</svg>';
 return svg;
 }catch(e){return '<div style="color:#888;font-size:12px;">[Courbe non disponible]</div>';}
 }
+// Construit un tableau de variation propre à partir d'un format simple [[VAR: ...]]
+// Format (chaque ligne = une rangée, cellules séparées par |) :
+//   x: -∞ | 2 | +∞
+//   f'(x): | - | 0 | + |
+//   f(x): +∞ | ↘ | -3 | ↗ | +∞
+// Toutes les lignes sont affichées telles quelles, alignées colonne par colonne.
+function renderVarTable(spec){
+try{
+const sym=s=>(s||'').trim()
+.replace(/\\?searrow/gi,'↘').replace(/\\?nearrow/gi,'↗')
+.replace(/\+\s*inf(ini|ty)?/gi,'+∞').replace(/-\s*inf(ini|ty)?/gi,'−∞').replace(/\binf(ini|ty)?\b/gi,'∞')
+.replace(/\bracine\(([^)]+)\)/gi,'√($1)').replace(/\bsqrt\(([^)]+)\)/gi,'√($1)')
+.replace(/\|\|/g,'‖');
+let rows=[];
+spec.split(/\n/).forEach(raw=>{
+const ln=raw.trim();if(!ln)return;
+const m=ln.match(/^([^:]+):\s*(.*)$/);
+if(!m)return;
+const label=m[1].trim();
+const cells=m[2].split('|').map(c=>sym(c));
+rows.push({label:label,cells:cells});
+});
+if(!rows.length)return '';
+const maxCols=Math.max(...rows.map(r=>r.cells.length));
+const cellCss='border:1px solid #333;padding:7px 14px;text-align:center;vertical-align:middle;font-family:\'Times New Roman\',serif;font-size:15px;';
+const headCss='border:1px solid #333;padding:7px 14px;text-align:center;font-weight:bold;background:#faf6ea;font-family:\'Times New Roman\',serif;font-size:15px;';
+let html='<div style="margin:16px 0;overflow-x:auto;"><table style="border-collapse:collapse;margin:0 auto;">';
+rows.forEach((r,ri)=>{
+const isX=ri===0;
+html+='<tr><td style="'+headCss+'">'+r.label+'</td>';
+for(let i=0;i<maxCols;i++){
+let c=r.cells[i]!==undefined?r.cells[i]:'';
+const isArrow=/↘|↗|↑|↓/.test(c);
+let st=cellCss;
+if(isX)st+='background:#f0e6c8;font-weight:bold;';
+if(isArrow)st+='font-size:20px;color:#1f6f3f;';
+html+='<td style="'+st+'">'+(c||'&nbsp;')+'</td>';
+}
+html+='</tr>';
+});
+html+='</table></div>';
+return html;
+}catch(e){return '';}
+}
 // Convertit les tableaux LaTeX \begin{array}...\end{array} (tableaux de variation/signe) en vrais tableaux HTML
 function convertArrayTables(text){
 if(!text)return text;
@@ -1014,6 +1058,9 @@ if(!text)return '';
 text=text.replace(/\[\[PLOT:([\s\S]*?)\]\]/gi,(m,spec)=>renderPlot(spec));
 // Nettoyer un bloc PLOT incomplet (coupé) pour ne jamais afficher de code brut
 text=text.replace(/\[\[PLOT:[\s\S]*$/i,'');
+// 0a-0. Traiter les tableaux de variation au format simple [[VAR: ...]]
+text=text.replace(/\[\[VAR:([\s\S]*?)\]\]/gi,(m,spec)=>renderVarTable(spec));
+text=text.replace(/\[\[VAR:[\s\S]*$/i,'');
 // 0a-pre. Nettoyer un tableau \begin{array} TRONQUÉ (ouvert mais jamais fermé par la limite de jetons)
 // On teste s'il y a un begin array sans end array correspondant à la fin -> on coupe le résidu
 {
@@ -1031,7 +1078,7 @@ text=text.replace(/(^|\n)\s*boxed\s*/g,'$1');
 // 0b. Protéger les figures SVG (géométrie) ET les tableaux de variation générés pour qu'ils s'affichent
 const svgs=[];
 // Protéger d'abord les tableaux de variation (div contenant un table) déjà convertis en HTML
-text=text.replace(/<div style="margin:14px 0;[^"]*"><table[\s\S]*?<\/table><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
+text=text.replace(/<div style="margin:1[46]px 0;[^"]*"><table[\s\S]*?<\/table><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
 text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
 // Rendre le SVG responsive et centré
 let svg=m.replace(/<svg/i,'<svg style="max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"');
@@ -1177,7 +1224,7 @@ return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <style>
 @page{
   margin:2cm 2cm 2.4cm 2cm;
-  @bottom-right{content:"Page "counter(page)" / "counter(pages);font-family:'Times New Roman',serif;font-size:10pt;color:#444;}
+  @bottom-center{content:counter(page);font-family:'Times New Roman',serif;font-size:10pt;color:#444;}
 }
 *{color:#000 !important;}
 body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;}
@@ -1359,7 +1406,7 @@ td{border:1px solid #555;padding:6px 10px;color:#000;}
 img{max-width:100%;}
 .doc-title{text-align:center;border-bottom:2px solid #B8860B;padding-bottom:8px;margin-bottom:18px;}
 </style>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:ProtectFormatting/></w:WordDocument></xml><![endif]-->
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotPromptForConvert/><w:DoNotShowRevisions/><w:UpdateFieldsOnOpen/></w:WordDocument></xml><![endif]-->
 </head><body>
 <div class="Section1">
 <!-- En-tête de page Word (zone protégée, double-clic requis pour éditer) -->
@@ -1713,7 +1760,7 @@ const needsCurve=/fonction|courbe|exponentielle|logarithme|d[ée]riv[ée]e|limit
 if(needsFigure||needsCurve){
 ivoireRules+=' IMPORTANT — REPRÉSENTATION VISUELLE OBLIGATOIRE.';
 if(needsCurve){
-ivoireRules+=' Pour le TABLEAU DE VARIATION, écris-le TOUJOURS entre $$ ... $$ avec la syntaxe LaTeX \\begin{array}{...} ... \\end{array} (l\'application le convertira en joli tableau). Utilise \\searrow pour décroissante et \\nearrow pour croissante. N\'écris JAMAIS le tableau de variation en texte brut sans les $$.';
+ivoireRules+=' Pour le TABLEAU DE VARIATION, n\'utilise PAS LaTeX. Utilise EXACTEMENT ce format simple (l\'application le transforme en joli tableau aligné) :\n[[VAR:\nx: -∞ | 2 | +∞\nf\'(x): | - | 0 | + |\nf(x): +∞ | ↘ | -3 | ↗ | +∞\n]]\nRègles : la ligne « x: » liste les valeurs remarquables séparées par | (bornes incluses). La ligne « f\'(x): » donne les signes ; commence et finis par | si la dérivée n\'est pas définie aux bornes, place le signe entre deux valeurs et 0 sous la valeur où elle s\'annule. La ligne « f(x): » alterne valeur puis flèche (↘ ou ↗) puis valeur : mets la valeur de f à chaque borne et à chaque extremum, séparées par la flèche de variation. Aligne bien : la ligne f(x) doit avoir le même nombre de | que de transitions. Adapte le nombre de colonnes au sujet. Place ce bloc [[VAR:...]] avant la courbe.';
 ivoireRules+=' Pour TOUTE courbe ou représentation graphique d\'une fonction, tu DOIS insérer un bloc spécial de tracé au format EXACT suivant (l\'application le transformera en une belle courbe précise) :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) en fonction de x)\nasymptote: y=... ou x=...\ntangente: y=... (équation de la tangente)\ndroite: y=...\nbranche: (expression de la branche parabolique)\npoint: (x, y) Nom\n]]\nRègles du bloc PLOT : écris l\'expression de la fonction avec x comme variable (ex : courbe: exp(x)/x , ou courbe: (x^2-1)/(x+2) , ou courbe: ln(x)+2*x). Utilise les fonctions exp(), ln(), sqrt(), cos(), sin(), abs(), et ^ pour les puissances. Choisis des bornes x et y adaptées pour bien voir la courbe. Ajoute une ligne "asymptote:", "tangente:", "branche:", "droite:" ou "point:" UNIQUEMENT si le sujet le demande. Tu peux mettre plusieurs lignes "courbe:" pour plusieurs fonctions. Place ce bloc [[PLOT:...]] juste après le tableau de variation. NE dessine PAS la courbe en SVG toi-même : utilise UNIQUEMENT le bloc [[PLOT:...]] pour les courbes de fonctions.';
 }
 if(needsFigure){
@@ -1744,7 +1791,7 @@ if(!S.exerciseForCorrect.trim()&&!S.pdfText)return;
 S.loading=true;S.correction='';render();
 const langInstr2=LANG==='en'?'Always respond in English.':'Réponds toujours en français.';
 const hasAnswer=S.studentAnswer.trim().length>0;
-const svgInstr=' REPRÉSENTATIONS VISUELLES : Si le sujet comporte une étude de fonction ou une courbe, tu DOIS tracer la courbe en insérant un bloc au format EXACT :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) avec x comme variable, ex: exp(x)/x)\nasymptote: y=... ou x=...\ntangente: y=...\nbranche: (expression)\npoint: (x, y) Nom\n]]\nUtilise exp(), ln(), sqrt(), ^ pour les puissances. Ajoute asymptote/tangente/branche/point seulement si demandé. Place le bloc après le tableau de variation. Pour une FIGURE GÉOMÉTRIQUE, dessine-la en SVG natif complet (<svg>...</svg>) avec sommets nommés, longueurs, angles, codages, vraies formes fermées (<polygon>/<path>), traits noirs sur fond blanc. N\'utilise jamais <img>.';
+const svgInstr=' REPRÉSENTATIONS VISUELLES : Pour un TABLEAU DE VARIATION, utilise le format simple (PAS LaTeX) :\n[[VAR:\nx: -∞ | 2 | +∞\nf\'(x): | - | 0 | + |\nf(x): +∞ | ↘ | -3 | ↗ | +∞\n]]\nSi le sujet comporte une courbe, trace-la en insérant un bloc au format EXACT :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) avec x comme variable, ex: exp(x)/x)\nasymptote: y=... ou x=...\ntangente: y=...\nbranche: (expression)\npoint: (x, y) Nom\n]]\nUtilise exp(), ln(), sqrt(), ^ pour les puissances. Ajoute asymptote/tangente/branche/point seulement si demandé. Pour une FIGURE GÉOMÉTRIQUE, dessine-la en SVG natif complet (<svg>...</svg>) avec sommets nommés, longueurs, angles, codages, vraies formes fermées (<polygon>/<path>), traits noirs sur fond blanc. N\'utilise jamais <img> ni \\boxed. Mets toutes les formules entre $ ... $.';
 const system=hasAnswer
 ?`Tu es un professeur bienveillant et expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Sois encourageant, précis et adapte ton feedback au niveau de l'élève. Donne toujours : 1) Note /20 justifiée 2) Points positifs 3) Erreurs expliquées 4) Conseils personnalisés. IMPORTANT : corrige la TOTALITÉ du sujet, tous les exercices ET tous les problèmes, sans en omettre aucun, même si le sujet est long (plusieurs pages).${svgInstr}`
 :`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Rédige un corrigé détaillé, clair et bien structuré. IMPORTANT : corrige la TOTALITÉ du sujet du début à la fin — TOUS les exercices ET TOUS les problèmes (y compris les études de fonctions, exponentielle, logarithme, etc.), sans en omettre aucun, même si le sujet fait plusieurs pages. Traite chaque question avec toutes les étapes de résolution et les réponses finales. Ne t'arrête pas avant d'avoir corrigé l'intégralité du sujet.${svgInstr}`;
