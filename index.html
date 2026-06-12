@@ -856,10 +856,115 @@ const els=document.querySelectorAll('.result-content');
 if(els.length){window.MathJax.typesetPromise([...els]).catch(()=>{});}
 }
 }
+// ===== MOTEUR DE TRACÉ DE COURBES (calcul précis en JS) =====
+// Évalue une expression mathématique en x (sécurisé, sans eval direct)
+function makeMathFn(expr){
+let e=expr.trim();
+// Conversions courantes vers JavaScript
+e=e.replace(/\^/g,'**');
+e=e.replace(/(\d)([a-zA-Z(])/g,'$1*$2'); // 2x -> 2*x, 3( -> 3*(
+e=e.replace(/\)([a-zA-Z0-9(])/g,')*$1'); // )( -> )*(
+// Fonctions mathématiques (ordre important pour éviter les conflits)
+e=e.replace(/\blog\s*\(/g,'@LOG10@(');
+e=e.replace(/\bln\s*\(/g,'Math.log(');
+e=e.replace(/@LOG10@\(/g,'Math.log10(');
+e=e.replace(/\bexp\s*\(/g,'Math.exp(');
+e=e.replace(/\bsqrt\s*\(/g,'Math.sqrt(');
+e=e.replace(/\bracine\s*\(/g,'Math.sqrt(');
+e=e.replace(/\babs\s*\(/g,'Math.abs(');
+e=e.replace(/\bsin\s*\(/g,'Math.sin(');
+e=e.replace(/\bcos\s*\(/g,'Math.cos(');
+e=e.replace(/\btan\s*\(/g,'Math.tan(');
+e=e.replace(/\bpi\b/gi,'Math.PI');
+e=e.replace(/(?<![a-zA-Z.])e(?![a-zA-Z.0-9])/g,'Math.E');
+try{return new Function('x','try{return '+e+';}catch(_){return NaN;}');}catch(_){return null;}
+}
+// Génère un SVG de courbe(s) précis à partir d'une spécification
+function renderPlot(spec){
+try{
+const W=460,H=420,pad=40;
+let xmin=-10,xmax=10,ymin=-10,ymax=10;
+const curves=[],lines=[],points=[],asymptotes=[],tangents=[],parabolic=[];
+// Parser la spécification (lignes "clé: valeur")
+spec.split(/[\n;]+/).forEach(raw=>{
+const ln=raw.trim();if(!ln)return;
+const cm=ln.match(/^x\s*:\s*\[?\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i);
+if(cm){xmin=parseFloat(cm[1]);xmax=parseFloat(cm[2]);return;}
+const ym=ln.match(/^y\s*:\s*\[?\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i);
+if(ym){ymin=parseFloat(ym[1]);ymax=parseFloat(ym[2]);return;}
+let m;
+if(m=ln.match(/^(?:courbe|curve|f)\s*:\s*(.+)$/i)){curves.push({expr:m[1],color:'#4DA6FF',w:2.6});return;}
+if(m=ln.match(/^asymptote\s*:\s*(.+)$/i)){asymptotes.push(m[1]);return;}
+if(m=ln.match(/^tangente\s*:\s*(.+)$/i)){tangents.push(m[1]);return;}
+if(m=ln.match(/^(?:branche|parabolique)\s*:\s*(.+)$/i)){parabolic.push(m[1]);return;}
+if(m=ln.match(/^(?:droite|line)\s*:\s*(.+)$/i)){lines.push(m[1]);return;}
+if(m=ln.match(/^point\s*:\s*\(?\s*(-?[\d.]+)\s*[,;]\s*(-?[\d.]+)\s*\)?\s*(.*)$/i)){points.push({x:parseFloat(m[1]),y:parseFloat(m[2]),label:m[3]||''});return;}
+});
+const sx=v=>pad+(v-xmin)/(xmax-xmin)*(W-2*pad);
+const sy=v=>H-pad-(v-ymin)/(ymax-ymin)*(H-2*pad);
+const inY=v=>isFinite(v)&&v>=ymin-(ymax-ymin)*2&&v<=ymax+(ymax-ymin)*2;
+// Construire le path d'une fonction
+function pathFor(expr){
+const f=makeMathFn(expr);if(!f)return '';
+let d='',pen=false,prevY=null;
+const N=600;
+for(let i=0;i<=N;i++){
+const x=xmin+(xmax-xmin)*i/N;let y=f(x);
+if(!isFinite(y)||Math.abs(y)>1e6){pen=false;prevY=null;continue;}
+// Couper aux discontinuités (sauts brusques = asymptote verticale)
+if(prevY!==null&&Math.abs(y-prevY)>(ymax-ymin)*1.5){pen=false;}
+const X=sx(x),Y=sy(Math.max(ymin-(ymax-ymin),Math.min(ymax+(ymax-ymin),y)));
+if(!pen){d+=`M${X.toFixed(1)} ${Y.toFixed(1)} `;pen=true;}else{d+=`L${X.toFixed(1)} ${Y.toFixed(1)} `;}
+prevY=y;
+}
+return d;
+}
+let svg=`<svg viewBox="0 0 ${W} ${H}" style="max-width:100%;height:auto;display:block;margin:18px auto;background:#fff;border-radius:12px;padding:8px;box-shadow:0 6px 20px rgba(0,0,0,0.35);">`;
+// Grille légère
+svg+=`<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#222"/></marker></defs>`;
+for(let gx=Math.ceil(xmin);gx<=xmax;gx++){if(gx===0)continue;svg+=`<line x1="${sx(gx)}" y1="${pad}" x2="${sx(gx)}" y2="${H-pad}" stroke="#eef" stroke-width="1"/>`;}
+for(let gy=Math.ceil(ymin);gy<=ymax;gy++){if(gy===0)continue;svg+=`<line x1="${pad}" y1="${sy(gy)}" x2="${W-pad}" y2="${sy(gy)}" stroke="#eef" stroke-width="1"/>`;}
+// Asymptotes (rouge vif) — supporte "x=2", "y=3", ou expression
+asymptotes.forEach(a=>{
+let m;
+if(m=a.match(/x\s*=\s*(-?[\d.]+)/i)){const xv=parseFloat(m[1]);svg+=`<line x1="${sx(xv)}" y1="${pad}" x2="${sx(xv)}" y2="${H-pad}" stroke="#FF1E1E" stroke-width="2" stroke-dasharray="7,5"/>`;}
+else if(m=a.match(/y\s*=\s*(-?[\d.]+)\s*$/i)){const yv=parseFloat(m[1]);svg+=`<line x1="${pad}" y1="${sy(yv)}" x2="${W-pad}" y2="${sy(yv)}" stroke="#FF1E1E" stroke-width="2" stroke-dasharray="7,5"/>`;}
+else{const expr=a.replace(/^y\s*=\s*/i,'');const d=pathFor(expr);if(d)svg+=`<path d="${d}" fill="none" stroke="#FF1E1E" stroke-width="2" stroke-dasharray="7,5"/>`;}
+});
+// Branches paraboliques (rose)
+parabolic.forEach(p=>{const expr=p.replace(/^y\s*=\s*/i,'');const d=pathFor(expr);if(d)svg+=`<path d="${d}" fill="none" stroke="#FF6EC7" stroke-width="2" stroke-dasharray="3,4"/>`;});
+// Droites & tangentes (vert clair)
+tangents.forEach(tg=>{const expr=tg.replace(/^y\s*=\s*/i,'');const d=pathFor(expr);if(d)svg+=`<path d="${d}" fill="none" stroke="#5BE37D" stroke-width="2.2" stroke-dasharray="6,4"/>`;});
+lines.forEach(l=>{let m;if(m=l.match(/x\s*=\s*(-?[\d.]+)/i)){const xv=parseFloat(m[1]);svg+=`<line x1="${sx(xv)}" y1="${pad}" x2="${sx(xv)}" y2="${H-pad}" stroke="#888" stroke-width="1.8"/>`;}else{const expr=l.replace(/^y\s*=\s*/i,'');const d=pathFor(expr);if(d)svg+=`<path d="${d}" fill="none" stroke="#888" stroke-width="1.8"/>`;}});
+// Axes
+svg+=`<line x1="${pad}" y1="${sy(0)}" x2="${W-pad}" y2="${sy(0)}" stroke="#222" stroke-width="1.6" marker-end="url(#ah)"/>`;
+svg+=`<line x1="${sx(0)}" y1="${H-pad}" x2="${sx(0)}" y2="${pad}" stroke="#222" stroke-width="1.6" marker-end="url(#ah)"/>`;
+svg+=`<text x="${W-pad+4}" y="${sy(0)+14}" font-size="13" fill="#222" font-style="italic">x</text>`;
+svg+=`<text x="${sx(0)+7}" y="${pad-2}" font-size="13" fill="#222" font-style="italic">y</text>`;
+svg+=`<text x="${sx(0)-12}" y="${sy(0)+14}" font-size="12" fill="#222">O</text>`;
+// Graduations
+for(let gx=Math.ceil(xmin);gx<=xmax;gx++){if(gx===0)continue;svg+=`<line x1="${sx(gx)}" y1="${sy(0)-4}" x2="${sx(gx)}" y2="${sy(0)+4}" stroke="#222"/><text x="${sx(gx)-3}" y="${sy(0)+16}" font-size="10" fill="#444">${gx}</text>`;}
+for(let gy=Math.ceil(ymin);gy<=ymax;gy++){if(gy===0)continue;svg+=`<line x1="${sx(0)-4}" y1="${sy(gy)}" x2="${sx(0)+4}" y2="${sy(gy)}" stroke="#222"/><text x="${sx(0)+7}" y="${sy(gy)+3}" font-size="10" fill="#444">${gy}</text>`;}
+// Courbe principale (bleu ciel)
+curves.forEach(c=>{const d=pathFor(c.expr);if(d)svg+=`<path d="${d}" fill="none" stroke="${c.color}" stroke-width="${c.w}" stroke-linejoin="round" stroke-linecap="round"/>`;});
+// Points particuliers
+points.forEach(p=>{if(!inY(p.y))return;svg+=`<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="3.5" fill="#222"/>`;if(p.label)svg+=`<text x="${sx(p.x)+6}" y="${sy(p.y)-6}" font-size="11" fill="#222">${p.label.replace(/</g,'')}</text>`;});
+// Légende
+let ly=pad+4;const leg=(col,txt,dash)=>{const s=`<line x1="${W-pad-120}" y1="${ly}" x2="${W-pad-100}" y2="${ly}" stroke="${col}" stroke-width="2.4" ${dash?'stroke-dasharray="6,4"':''}/><text x="${W-pad-95}" y="${ly+4}" font-size="10" fill="#333">${txt}</text>`;ly+=15;return s;};
+if(curves.length)svg+=leg('#4DA6FF','courbe',false);
+if(tangents.length)svg+=leg('#5BE37D','tangente',true);
+if(asymptotes.length)svg+=leg('#FF1E1E','asymptote',true);
+if(parabolic.length)svg+=leg('#FF6EC7','br. parabolique',true);
+svg+='</svg>';
+return svg;
+}catch(e){return '<div style="color:#888;font-size:12px;">[Courbe non disponible]</div>';}
+}
 // Convertit le Markdown en HTML en protégeant les formules LaTeX
 function mdFormat(text){
 if(!text)return '';
-// 0. Protéger les figures SVG (géométrie, courbes) pour qu'elles s'affichent
+// 0a. Traiter les blocs [[PLOT: ...]] -> courbe tracée précisément en JS
+text=text.replace(/\[\[PLOT:([\s\S]*?)\]\]/gi,(m,spec)=>renderPlot(spec));
+// 0b. Protéger les figures SVG (géométrie) pour qu'elles s'affichent
 const svgs=[];
 text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
 // Rendre le SVG responsive et centré
@@ -1415,10 +1520,13 @@ const topicLow=(S.topic||'').toLowerCase();
 const needsFigure=/g[ée]om[ée]trie|figure|triangle|cercle|carr[ée]|rectangle|losange|trap[èe]ze|parall[ée]logramme|angle|polygone|sph[èe]re|c[ôo]ne|cube|pyramide|prisme|cylindre|solide|sym[ée]trie|vecteur|rep[èe]re|construction/.test(topicLow);
 const needsCurve=/fonction|courbe|exponentielle|logarithme|d[ée]riv[ée]e|limite|asymptote|tangente|parabole|variation|repr[ée]sentation graphique|tableau de variation|[ée]tude de fonction/.test(topicLow);
 if(needsFigure||needsCurve){
-ivoireRules+=' IMPORTANT — REPRÉSENTATION VISUELLE : ce sujet nécessite une figure. Tu DOIS inclure dans ta réponse une figure dessinée en SVG (balise <svg>...</svg>) claire, propre et complète, directement intégrée dans le texte là où c\'est pertinent.';
-if(needsFigure)ivoireRules+=' Dessine la ou les figures géométriques avec leurs sommets nommés (A, B, C...), les longueurs, les angles marqués, les codages (segments égaux, angles droits avec un petit carré). Utilise un viewBox adapté, des traits noirs nets sur fond blanc, des étiquettes lisibles.';
-if(needsCurve)ivoireRules+=' Trace la courbe représentative dans un repère orthonormé avec : les axes (Ox, Oy) gradués et fléchés, l\'origine O, la courbe tracée avec précision, ET si pertinent : les asymptotes (en pointillés rouges), les tangentes remarquables (en pointillés bleus), les droites demandées, les branches paraboliques, les points particuliers (intersections, extremums). Nomme chaque élément. Utilise un viewBox d\'au moins 400x400, fond blanc, courbe épaisse colorée, axes noirs.';
-ivoireRules+=' Le SVG doit être valide, autonome et joliment présenté. N\'utilise PAS de balise <img>, dessine tout en SVG natif (<path>, <line>, <circle>, <polygon>, <text>, etc.).';
+ivoireRules+=' IMPORTANT — REPRÉSENTATION VISUELLE OBLIGATOIRE.';
+if(needsCurve){
+ivoireRules+=' Pour TOUTE courbe ou représentation graphique d\'une fonction, tu DOIS insérer un bloc spécial de tracé au format EXACT suivant (l\'application le transformera en une belle courbe précise) :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) en fonction de x)\nasymptote: y=... ou x=...\ntangente: y=... (équation de la tangente)\ndroite: y=...\nbranche: (expression de la branche parabolique)\npoint: (x, y) Nom\n]]\nRègles du bloc PLOT : écris l\'expression de la fonction avec x comme variable (ex : courbe: exp(x)/x , ou courbe: (x^2-1)/(x+2) , ou courbe: ln(x)+2*x). Utilise les fonctions exp(), ln(), sqrt(), cos(), sin(), abs(), et ^ pour les puissances. Choisis des bornes x et y adaptées pour bien voir la courbe. Ajoute une ligne "asymptote:", "tangente:", "branche:", "droite:" ou "point:" UNIQUEMENT si le sujet le demande. Tu peux mettre plusieurs lignes "courbe:" pour plusieurs fonctions. Place ce bloc [[PLOT:...]] juste après le tableau de variation. NE dessine PAS la courbe en SVG toi-même : utilise UNIQUEMENT le bloc [[PLOT:...]] pour les courbes de fonctions.';
+}
+if(needsFigure){
+ivoireRules+=' Pour les FIGURES GÉOMÉTRIQUES (triangles, cercles, quadrilatères, solides, angles...), dessine-les en SVG natif complet (<svg viewBox="0 0 300 300">...</svg>) avec : les sommets nommés (A, B, C...), les longueurs indiquées, les angles marqués, le codage des segments égaux et des angles droits (petit carré). Traits noirs nets (stroke="black" stroke-width="2") sur fond blanc, étiquettes lisibles avec <text>. Dessine de vraies formes fermées avec <polygon> ou <path>, pas de simples traits isolés. Vérifie que les coordonnées forment bien la figure demandée.';
+}
 }
 const system=isLesson
 ?`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). Tu rédiges des cours pédagogiques complets et structurés adaptés au programme ivoirien.${ivoireRules} ${langInstr} Formate bien avec des titres et sections claires. Sois pédagogue mais concis pour répondre rapidement.`
@@ -1444,7 +1552,7 @@ if(!S.exerciseForCorrect.trim()&&!S.pdfText)return;
 S.loading=true;S.correction='';render();
 const langInstr2=LANG==='en'?'Always respond in English.':'Réponds toujours en français.';
 const hasAnswer=S.studentAnswer.trim().length>0;
-const svgInstr=' Si le sujet comporte une étude de fonction, une courbe, une représentation graphique, ou une figure géométrique, tu DOIS la dessiner en SVG (balise <svg>...</svg>) directement dans le corrigé : pour une courbe, trace un repère orthonormé avec axes gradués et fléchés, la courbe précise, et tous les éléments demandés (asymptotes en pointillés rouges, tangentes en pointillés bleus, droites, branches paraboliques, points particuliers nommés) ; pour une figure géométrique, dessine-la avec sommets nommés, longueurs, angles et codages. Fond blanc, traits nets, viewBox d\'au moins 400x400, tout dessiné en SVG natif (pas de <img>).';
+const svgInstr=' REPRÉSENTATIONS VISUELLES : Si le sujet comporte une étude de fonction ou une courbe, tu DOIS tracer la courbe en insérant un bloc au format EXACT :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) avec x comme variable, ex: exp(x)/x)\nasymptote: y=... ou x=...\ntangente: y=...\nbranche: (expression)\npoint: (x, y) Nom\n]]\nUtilise exp(), ln(), sqrt(), ^ pour les puissances. Ajoute asymptote/tangente/branche/point seulement si demandé. Place le bloc après le tableau de variation. Pour une FIGURE GÉOMÉTRIQUE, dessine-la en SVG natif complet (<svg>...</svg>) avec sommets nommés, longueurs, angles, codages, vraies formes fermées (<polygon>/<path>), traits noirs sur fond blanc. N\'utilise jamais <img>.';
 const system=hasAnswer
 ?`Tu es un professeur bienveillant et expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Sois encourageant, précis et adapte ton feedback au niveau de l'élève. Donne toujours : 1) Note /20 justifiée 2) Points positifs 3) Erreurs expliquées 4) Conseils personnalisés. IMPORTANT : corrige la TOTALITÉ du sujet, tous les exercices ET tous les problèmes, sans en omettre aucun, même si le sujet est long (plusieurs pages).${svgInstr}`
 :`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). ${langInstr2} Rédige un corrigé détaillé, clair et bien structuré. IMPORTANT : corrige la TOTALITÉ du sujet du début à la fin — TOUS les exercices ET TOUS les problèmes (y compris les études de fonctions, exponentielle, logarithme, etc.), sans en omettre aucun, même si le sujet fait plusieurs pages. Traite chaque question avec toutes les étapes de résolution et les réponses finales. Ne t'arrête pas avant d'avoir corrigé l'intégralité du sujet.${svgInstr}`;
