@@ -326,7 +326,7 @@ devtoolsOpen = false;
     <p class="hero-eyebrow">🇨🇮 Côte d'Ivoire · Intelligence Artificielle · Éducation</p>
     <h1 class="hero-title"><span class="gold-text">Briton Science</span></h1>
     <p class="hero-subtitle" style="font-family:'Cormorant Garamond',serif;">La plateforme IA dédiée à l'excellence académique ivoirienne</p>
-    <p class="hero-desc">De la maternelle au supérieur (université et grandes écoles), générez des cours et exercices sur mesure, obtenez des corrections instantanées et suivez la progression de chaque apprenant — propulsés par l'intelligence artificielle.</p>
+    <p class="hero-desc">Du primaire au supérieur (université et grandes écoles), générez des cours et exercices sur mesure, obtenez des corrections instantanées et suivez la progression de chaque apprenant — propulsés par l'intelligence artificielle.</p>
     <div class="hero-btns">
       <button class="btn-primary" onclick="showPage('app');initApp()">✦ Accéder à l'Application</button>
       <button class="btn-secondary" onclick="document.getElementById('s-features').scrollIntoView({behavior:'smooth'})">Découvrir →</button>
@@ -366,9 +366,8 @@ devtoolsOpen = false;
         <h2 class="sec-title" id="lvl-title">Tous les <span class="gold-text">niveaux scolaires</span></h2>
         <p class="sec-body" id="lvl-body">Du jardin d'enfants à l'université, Briton Science couvre l'intégralité du parcours académique ivoirien.</p>
       </div>
-      <div class="lvl-grid">
-        <div class="lvl-card reveal" style="--c:#A8DADC"><span class="lvl-emoji">🌱</span><div class="lvl-name">Maternelle</div><div class="lvl-cls">Petite Section<br>Moyenne Section<br>Grande Section</div></div>
-        <div class="lvl-card reveal" style="--c:#6C63FF;transition-delay:.1s"><span class="lvl-emoji">📚</span><div class="lvl-name">Primaire</div><div class="lvl-cls">CP1 · CP2<br>CE1 · CE2<br>CM1 · CM2</div></div>
+      <div class="lvl-grid" style="grid-template-columns:repeat(4,1fr);">
+        <div class="lvl-card reveal" style="--c:#6C63FF"><span class="lvl-emoji">📚</span><div class="lvl-name">Primaire</div><div class="lvl-cls">CP1 · CP2<br>CE1 · CE2<br>CM1 · CM2</div></div>
         <div class="lvl-card reveal" style="--c:#2EC4B6;transition-delay:.2s"><span class="lvl-emoji">🔬</span><div class="lvl-name">Collège</div><div class="lvl-cls">6ème · 5ème<br>4ème · 3ème</div></div>
         <div class="lvl-card reveal" style="--c:#F4A261;transition-delay:.3s"><span class="lvl-emoji">🎓</span><div class="lvl-name">Lycée</div><div class="lvl-cls">Seconde C/A<br>1ère C/D/A1/A2<br>Tle C/D/A1/A2</div></div>
         <div class="lvl-card reveal" style="--c:#E9C46A;transition-delay:.4s"><span class="lvl-emoji">🏛️</span><div class="lvl-name">Supérieur</div><div class="lvl-cls">Université (L1–Doctorat)<br>Grandes Écoles & BTS<br>+ Filières spécialisées</div></div>
@@ -438,7 +437,7 @@ devtoolsOpen = false;
       <div class="ft-top">
         <div>
           <div class="ft-brand gold-text">Briton Science</div>
-          <p class="ft-tag" id="ft-tag">La plateforme d'excellence éducative pour la Côte d'Ivoire, de la Maternelle au Supérieur.</p>
+          <p class="ft-tag" id="ft-tag">La plateforme d'excellence éducative pour la Côte d'Ivoire, du Primaire au Supérieur.</p>
         </div>
         <div class="ft-col">
           <div class="ft-col-title" id="ft-c1">Application</div>
@@ -495,12 +494,12 @@ function showAbout(){
 const isEN=(typeof LANG!=='undefined'&&LANG==='en');
 const txt=isEN?{
 t:'About Briton Science',
-b:'Briton Science is an AI-powered educational platform dedicated to academic excellence in Côte d\'Ivoire. From preschool to higher education (university and grandes écoles), it generates tailored courses and exercises, and provides detailed corrections aligned with the Ivorian curriculum.',
+b:'Briton Science is an AI-powered educational platform dedicated to academic excellence in Côte d\'Ivoire. From primary to higher education (university and grandes écoles), it generates tailored courses and exercises, and provides detailed corrections aligned with the Ivorian curriculum.',
 m:'Our mission: make quality education accessible to every Ivorian student and support teachers in their daily work.',
 c:'Contact us',close:'Close'
 }:{
 t:'À propos de Briton Science',
-b:'Briton Science est une plateforme éducative alimentée par l\'intelligence artificielle, dédiée à l\'excellence académique en Côte d\'Ivoire. De la maternelle au supérieur (université et grandes écoles), elle génère des cours et exercices sur mesure et fournit des corrigés détaillés conformes au programme ivoirien.',
+b:'Briton Science est une plateforme éducative alimentée par l\'intelligence artificielle, dédiée à l\'excellence académique en Côte d\'Ivoire. Du primaire au supérieur (université et grandes écoles), elle génère des cours et exercices sur mesure et fournit des corrigés détaillés conformes au programme ivoirien.',
 m:'Notre mission : rendre une éducation de qualité accessible à chaque élève ivoirien et accompagner les enseignants dans leur travail quotidien.',
 c:'Nous contacter',close:'Fermer'
 };
@@ -531,8 +530,6 @@ pc.appendChild(p);
 const ro=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible');}),{threshold:.1});
 document.querySelectorAll('.reveal').forEach(el=>ro.observe(el));
 const CYCLES=[
-{id:'maternelle',label:'Maternelle',emoji:'🌱',color:'#A8DADC',
-subs:[{id:'petite',label:'Petite Section'},{id:'moyenne',label:'Moyenne Section'},{id:'grande',label:'Grande Section'}]},
 {id:'primaire',label:'Primaire',emoji:'📚',color:'#6C63FF',
 subs:[{id:'CP1',label:'CP1',full:'Cours Préparatoire 1ère Année'},{id:'CP2',label:'CP2',full:'Cours Préparatoire 2ème Année'},
 {id:'CE1',label:'CE1',full:'Cours Élémentaire 1ère Année'},{id:'CE2',label:'CE2',full:'Cours Élémentaire 2ème Année'},
@@ -745,6 +742,36 @@ const SUBJECTS=[
 {id:'anglais',label:'Anglais',labelEN:'English',icon:'🌐',color:'#E9C46A'},
 {id:'autre',label:'Autre',labelEN:'Other',icon:'✦',color:'#A8DADC'},
 ];
+// ===== MATIÈRES DU PRIMAIRE IVOIRIEN (CP1 à CM2) =====
+const SUBJECTS_PRIMAIRE=[
+{id:'maths',label:'Mathématiques',labelEN:'Mathematics',icon:'∑',color:'#6C63FF'},
+{id:'francais',label:'Français',labelEN:'French',icon:'Aa',color:'#FF6B6B'},
+{id:'lecture',label:'Lecture',labelEN:'Reading',icon:'📖',color:'#FF8C42'},
+{id:'ecriture',label:'Écriture',labelEN:'Writing',icon:'✍',color:'#FFB6B9'},
+{id:'eveil',label:'Exercices d\'observation / Éveil au milieu',labelEN:'Science & Environment',icon:'🌿',color:'#2EC4B6'},
+{id:'eps',label:'EPS (Éducation Physique et Sportive)',labelEN:'Physical Education',icon:'⚽',color:'#06D6A0'},
+{id:'edhc',label:'EDHC (Éducation aux Droits de l\'Homme et à la Citoyenneté)',labelEN:'Civic Education',icon:'⚖',color:'#118AB2'},
+{id:'aem',label:'AEM (Activités d\'Expression Manuelle) / Dessin',labelEN:'Arts & Crafts',icon:'🎨',color:'#F4A261'},
+{id:'anglais',label:'Anglais (initiation)',labelEN:'English',icon:'🌐',color:'#E9C46A'},
+{id:'chant',label:'Chant / Poésie / Récitation',labelEN:'Songs & Poetry',icon:'🎵',color:'#C77DFF'},
+{id:'autre',label:'Autre',labelEN:'Other',icon:'✦',color:'#A8DADC'},
+];
+// ===== GRANDS CHAPITRES / THÈMES DU PRIMAIRE (programme ivoirien) =====
+const CHAPITRES_PRIMAIRE={
+maths:['Les nombres de 0 à 9','Les nombres jusqu\'à 100','Les nombres jusqu\'à 1000','Les grands nombres','L\'addition','La soustraction','La multiplication','La division','Les fractions','Les nombres décimaux','La monnaie (Franc CFA)','Les mesures de longueur','Les mesures de masse','Les mesures de capacité','Le périmètre','L\'aire','Les figures géométriques','Le repérage dans le temps (heures, calendrier)','Les problèmes','La proportionnalité'],
+francais:['L\'alphabet','Les voyelles et les consonnes','Les syllabes','Le nom','Le déterminant (article)','L\'adjectif qualificatif','Le verbe','Le sujet','Les pronoms personnels','Le genre et le nombre','Le présent de l\'indicatif','L\'imparfait','Le futur simple','Le passé composé','La phrase','La ponctuation','Le vocabulaire','La production d\'écrit (rédaction)','Les homophones','Le dictionnaire'],
+lecture:['Lecture de syllabes','Lecture de mots','Lecture de phrases','Lecture de textes courts','Compréhension de texte','Lecture à voix haute','Le conte','Le poème','Le documentaire','La bande dessinée'],
+ecriture:['Les lettres minuscules','Les lettres majuscules','Les chiffres','La copie de mots','La copie de phrases','La dictée de mots','La dictée de phrases','La présentation du cahier','L\'écriture cursive'],
+eveil:['Le corps humain','Les cinq sens','Les animaux domestiques et sauvages','Les plantes','L\'eau','L\'air','Le sol','L\'hygiène corporelle','L\'alimentation','Les saisons','Le village et la ville','Les moyens de transport','Les métiers','La famille','L\'environnement et sa protection'],
+eps:['La course','Le saut','Le lancer','Les jeux collectifs','La gymnastique','L\'équilibre','La coordination','Les jeux traditionnels'],
+edhc:['La politesse','Le respect des autres','Les règles de vie en classe','La propreté','Les droits de l\'enfant','Les devoirs de l\'élève','La citoyenneté','Le respect de l\'environnement','La tolérance','La solidarité','Les symboles de la République (drapeau, hymne)'],
+aem:['Le dessin libre','Le coloriage','Le découpage','Le collage','Le pliage','Le modelage','Les travaux manuels'],
+anglais:['Greetings (les salutations)','Numbers (les nombres)','Colors (les couleurs)','The family (la famille)','Animals (les animaux)','The body (le corps)','Days of the week (les jours)','Classroom objects (objets de la classe)'],
+chant:['Les comptines','Les chants patriotiques','Les poésies','Les récitations','Les fables'],
+};
+// Recherche une matière dans les deux listes (primaire + général)
+function findSubject(id){return SUBJECTS_PRIMAIRE.find(s=>s.id===id)||SUBJECTS.find(s=>s.id===id);}
+
 const PROG_DATA=[
 {subject:'Mathématiques',score:72,ex:14,icon:'∑',color:'#6C63FF'},
 {subject:'Français',score:85,ex:10,icon:'Aa',color:'#FF6B6B'},
@@ -883,7 +910,7 @@ return text;
 function getDocTitle(type){
 const cycle=getCycle();
 const lvl=currentSubLabel();
-const subj=SUBJECTS.find(s=>s.id===S.subject);
+const subj=findSubject(S.subject);
 const matiere=subj?subj.label:'';
 const t=S.topic||'Exercice';
 return `${type} - ${matiere} - ${lvl} - ${t}`;
@@ -1169,8 +1196,8 @@ return `
 <div style="animation:fadeUp 0.35s ease both;">
 <div class="app-label">${t('app_subject')}</div>
 <div class="subj-grid" style="margin-bottom:16px;">
-${SUBJECTS.map(s=>`
-<button class="subj-btn" onclick="S.subject='${s.id}';render()" style="
+${(S.cycle==='primaire'?SUBJECTS_PRIMAIRE:SUBJECTS).map(s=>`
+<button class="subj-btn" onclick="S.subject='${s.id}';S.topic='';render()" style="
 border:1.5px solid ${S.subject===s.id?s.color:'rgba(255,255,255,0.08)'};
 background:${S.subject===s.id?s.color+'18':'rgba(255,255,255,0.03)'};
 color:${S.subject===s.id?s.color:'#bbb'};
@@ -1178,6 +1205,11 @@ font-weight:${S.subject===s.id?700:400};">
 <span class="subj-icon">${s.icon}</span>${LANG==='en'?s.labelEN||s.label:s.label}
 </button>`).join('')}
 </div>
+${(S.cycle==='primaire'&&S.subject&&CHAPITRES_PRIMAIRE[S.subject])?`
+<div class="app-label">${LANG==='en'?'Suggested chapters — tap to choose':'Grands chapitres — touchez pour choisir'}</div>
+<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;">
+${CHAPITRES_PRIMAIRE[S.subject].map(ch=>`<button onclick="S.topic=this.textContent;render()" style="padding:7px 12px;border-radius:20px;font-family:'DM Sans',sans-serif;font-size:11.5px;cursor:pointer;transition:all 0.15s;border:1.5px solid ${S.topic===ch?'#6C63FF':'rgba(108,99,255,0.25)'};background:${S.topic===ch?'rgba(108,99,255,0.25)':'rgba(108,99,255,0.06)'};color:${S.topic===ch?'#c0b8ff':'#9990cc'};">${ch}</button>`).join('')}
+</div>`:''}
 <div class="app-label">${t('app_topic')}</div>
 <input id="topic-input" class="app-input" placeholder="${t('app_topic_ph')}" value="${S.topic}">
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:${(!canGo&&!S.loading)?'6px':'20px'};">
@@ -1353,7 +1385,7 @@ const isLesson = mode==='cours';
 S.genMode = isLesson?'cours':'exercice';
 S.loading=true;S.generated='';render();
 const langInstr = LANG==='en' ? 'Always respond in English.' : 'Réponds toujours en français.';
-const subj=SUBJECTS.find(s=>s.id===S.subject);
+const subj=findSubject(S.subject);
 // Règles spécifiques au système éducatif ivoirien (coefficients officiels + complexité)
 const lvlLabel=getLevelLabel();
 let ivoireRules='';
@@ -1364,6 +1396,10 @@ if(isMaths&&(isTermC||isTermD)){
 ivoireRules=' En Côte d\'Ivoire, les Mathématiques en Terminale C et D ont un COEFFICIENT de 5 (indique-le clairement).';
 if(isTermC)ivoireRules+=' La série C est la série scientifique la plus exigeante : propose des sujets de NIVEAU ÉLEVÉ, plus abstraits et rigoureux, avec démonstrations, raisonnements approfondis et questions de synthèse (plus complexes que la série D).';
 if(isTermD)ivoireRules+=' La série D est scientifique mais moins poussée que la série C : propose des sujets de difficulté MODÉRÉE, plus appliqués et concrets, moins abstraits que ceux de la série C.';
+}
+// Adaptation pédagogique pour le primaire (jeunes enfants)
+if(S.cycle==='primaire'){
+ivoireRules+=' Niveau PRIMAIRE ('+lvlLabel+') : adresse-toi à un jeune enfant. Utilise un langage très simple, des phrases courtes, des exemples concrets de la vie quotidienne ivoirienne (marché, famille, école, animaux), un ton chaleureux et encourageant. Évite tout vocabulaire trop technique. Les consignes doivent être claires et adaptées à l\'âge.';
 }
 const system=isLesson
 ?`Tu es un professeur expert du système éducatif ivoirien (Côte d'Ivoire). Tu rédiges des cours pédagogiques complets et structurés adaptés au programme ivoirien.${ivoireRules} ${langInstr} Formate bien avec des titres et sections claires. Sois pédagogue mais concis pour répondre rapidement.`
@@ -1440,7 +1476,7 @@ nav_subjects: 'Matières', nav_home_btn: 'Accueil', nav_app_btn: "Accéder à l'
 nav_tagline: 'Plateforme Éducative IA — 🇨🇮',
 hero_eyebrow: "🇨🇮 Côte d'Ivoire · Intelligence Artificielle · Éducation",
 hero_subtitle: "La plateforme IA dédiée à l'excellence académique ivoirienne",
-hero_desc: "De la maternelle au supérieur (université et grandes écoles), générez des cours et exercices sur mesure, obtenez des corrections instantanées et suivez la progression de chaque apprenant — propulsés par l'intelligence artificielle.",
+hero_desc: "Du primaire au supérieur (université et grandes écoles), générez des cours et exercices sur mesure, obtenez des corrections instantanées et suivez la progression de chaque apprenant — propulsés par l'intelligence artificielle.",
 hero_cta1: "✦ Accéder à l'Application", hero_cta2: "Découvrir →",
 stat1: 'Cycles Scolaires', stat2: 'Niveaux de Classe', stat3: 'Matières Couvertes', stat4: 'Correction Instantanée',
 feat_eye: 'Fonctionnalités',
@@ -1469,7 +1505,7 @@ cta_eye:'Rejoignez Briton Science',
 cta_title:"<span class='gold-text'>Commencez dès aujourd'hui</span>",
 cta_sub:"L'excellence académique ivoirienne, amplifiée par l'intelligence artificielle.",
 cta1:"✦ Accéder Gratuitement", cta2:"En savoir plus →",
-ft_tag:"La plateforme d'excellence éducative pour la Côte d'Ivoire, de la Maternelle au Supérieur.",
+ft_tag:"La plateforme d'excellence éducative pour la Côte d'Ivoire, du Primaire au Supérieur.",
 ft_c1:'Application', ft_c2:'Niveaux', ft_c3:'Informations',
 ft_about:'À propos de nous', ft_contact:'Contact', ft_support:'Support',
 ft_l1:'Générer un exercice',ft_l2:'Corriger une copie',ft_l3:'Suivi de progression',
@@ -1504,7 +1540,7 @@ nav_subjects:'Subjects', nav_home_btn:'Home', nav_app_btn:'Open App',
 nav_tagline:'AI Education Platform — 🇨🇮',
 hero_eyebrow:"🇨🇮 Côte d'Ivoire · Artificial Intelligence · Education",
 hero_subtitle:"The AI platform dedicated to Ivorian academic excellence",
-hero_desc:"From preschool to higher education (university and grandes écoles), generate custom lessons and exercises, get instant corrections and track every learner's progress — powered by artificial intelligence.",
+hero_desc:"From primary to higher education (university and grandes écoles), generate custom lessons and exercises, get instant corrections and track every learner's progress — powered by artificial intelligence.",
 hero_cta1:"✦ Open the Application", hero_cta2:"Discover →",
 stat1:'School Cycles', stat2:'Class Levels', stat3:'Subjects Covered', stat4:'Instant Correction',
 feat_eye:'Features',
