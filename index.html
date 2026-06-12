@@ -959,6 +959,49 @@ svg+='</svg>';
 return svg;
 }catch(e){return '<div style="color:#888;font-size:12px;">[Courbe non disponible]</div>';}
 }
+// Convertit les tableaux LaTeX \begin{array}...\end{array} (tableaux de variation/signe) en vrais tableaux HTML
+function convertArrayTables(text){
+if(!text)return text;
+// Gérer la forme avec backslashes ET la forme « nettoyée » (beginarray sans backslash)
+// 1) Repérer un bloc array, éventuellement entouré de $...$ ou $$...$$
+const reArr=/\${0,2}\s*\\?begin\s*\{?array\}?\s*(\{[^}]*\})?([\s\S]*?)\\?end\s*\{?array\}?\s*\${0,2}/gi;
+return text.replace(reArr,(m,colspec,body)=>{
+try{
+// Nettoyer le corps : retirer \hline, hline, et découper en lignes sur \\ ou retours
+let b=body;
+b=b.replace(/\\?hline/g,'');
+// Les lignes sont séparées par \\ (ou \\\\). Dans la forme nettoyée, par des retours à la ligne.
+let rows=b.split(/\\\\|\n/).map(r=>r.trim()).filter(r=>r.length);
+if(!rows.length)return '';
+// Convertir chaque cellule
+const arrow=s=>s
+.replace(/\\?searrow/g,'↘').replace(/\\?nearrow/g,'↗')
+.replace(/\\?rightarrow/g,'→').replace(/\\?to\b/g,'→')
+.replace(/\\?nwarrow/g,'↖').replace(/\\?swarrow/g,'↙')
+.replace(/\\?uparrow/g,'↑').replace(/\\?downarrow/g,'↓')
+.replace(/\\?pm/g,'±').replace(/\\?mp/g,'∓')
+.replace(/\\?infty/g,'∞').replace(/\+\s*∞/g,'+∞').replace(/-\s*∞/g,'−∞')
+.replace(/\\?times/g,'×').replace(/\\?cdot/g,'·')
+.replace(/\\?leq/g,'≤').replace(/\\?geq/g,'≥').replace(/\\?neq/g,'≠')
+.replace(/\\?alpha/g,'α').replace(/\\?beta/g,'β').replace(/\\?lambda/g,'λ').replace(/\\?mu/g,'μ').replace(/\\?pi\b/g,'π')
+.replace(/\\?quad/g,' ').replace(/\\?,/g,'').replace(/\\?;/g,' ').replace(/\\?!/g,'')
+.replace(/\\?frac\{([^{}]+)\}\{([^{}]+)\}/g,'($1)/($2)')
+.replace(/\\?sqrt\{([^{}]+)\}/g,'√($1)')
+.replace(/\^\{([^{}]+)\}/g,'^$1').replace(/_\{([^{}]+)\}/g,'_$1')
+.replace(/[{}]/g,'').replace(/\\/g,'').trim();
+let htmlRows=rows.map((row,ri)=>{
+const cells=row.split('&').map(c=>arrow(c));
+const tag='td';
+const isHeader=ri===0;
+return '<tr>'+cells.map(c=>{
+const style='border:1px solid #555;padding:6px 12px;text-align:center;'+(isHeader?'background:#f0e6c8;font-weight:bold;':'')+(c.match(/↘|↗|↑|↓/)?'font-size:18px;':'');
+return '<'+tag+' style="'+style+'">'+(c||'&nbsp;')+'</'+tag+'>';
+}).join('')+'</tr>';
+}).join('');
+return '<div style="margin:14px 0;"><table style="border-collapse:collapse;margin:0 auto;min-width:60%;font-family:\'Times New Roman\',serif;">'+htmlRows+'</table></div>';
+}catch(e){return '';}
+});
+}
 // Convertit le Markdown en HTML en protégeant les formules LaTeX
 function mdFormat(text){
 if(!text)return '';
@@ -966,8 +1009,12 @@ if(!text)return '';
 text=text.replace(/\[\[PLOT:([\s\S]*?)\]\]/gi,(m,spec)=>renderPlot(spec));
 // Nettoyer un bloc PLOT incomplet (coupé) pour ne jamais afficher de code brut
 text=text.replace(/\[\[PLOT:[\s\S]*$/i,'');
-// 0b. Protéger les figures SVG (géométrie) pour qu'elles s'affichent
+// 0a-bis. Convertir les tableaux de variation LaTeX (\begin{array}...\end{array}) en vrais tableaux HTML
+text=convertArrayTables(text);
+// 0b. Protéger les figures SVG (géométrie) ET les tableaux de variation générés pour qu'ils s'affichent
 const svgs=[];
+// Protéger d'abord les tableaux de variation (div contenant un table) déjà convertis en HTML
+text=text.replace(/<div style="margin:14px 0;"><table[\s\S]*?<\/table><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
 text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
 // Rendre le SVG responsive et centré
 let svg=m.replace(/<svg/i,'<svg style="max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"');
@@ -1032,6 +1079,12 @@ if(cells.length){html+='<tr>'+cells.map(c=>`<td style="border:1px solid rgba(255
 });
 html+='</tbody></table>';
 return html;
+});
+// 6c. Citations Markdown ( > texte ) -> encadré élégant (évite d'afficher le « > » brut)
+text=text.replace(/(?:^&gt;[ \t]?.*(?:\n|$))+/gm,(block)=>{
+const inner=block.split('\n').map(l=>l.replace(/^&gt;[ \t]?/,'').trim()).filter(l=>l).join('<br>');
+if(!inner)return '';
+return '<div style="border-left:3px solid #FFD700;background:rgba(255,215,0,0.06);padding:10px 14px;margin:10px 0;border-radius:0 8px 8px 0;">'+inner+'</div>\n';
 });
 // 7. Listes - item
 text=text.replace(/^[-•]\s+(.+)$/gm,'<div style="padding-left:16px;position:relative;margin:3px 0;"><span style="position:absolute;left:0;color:#FFD700;">•</span>$1</div>');
@@ -1098,14 +1151,16 @@ c=c.replace(/color:#c0b8ff;?/gi,'');
 c=c.replace(/color:#f0f0f8;?/gi,'');
 // Convertir les titres dorés clairs en doré foncé lisible
 c=c.replace(/color:#FFD700;?/gi,'color:#000;');
+// Retirer le style « carte » (ombre/coins arrondis/fond) des figures pour qu'elles s'intègrent à la page
+c=c.replace(/(<svg[^>]*?)style="[^"]*"/gi,'$1style="background:#fff;"');
 return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <title>${titre}</title>
 <script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};<\/script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"><\/script>
 <style>
-@page{margin:2cm;}
+@page{margin:2cm 2cm 2.4cm 2cm;}
 *{color:#000 !important;}
-body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;}
+body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;counter-reset:page;}
 .header{text-align:center;border-bottom:3px solid #B8860B;padding-bottom:16px;margin-bottom:24px;}
 .header .logo{font-family:'Times New Roman',serif;font-size:26px;font-weight:bold;color:#8B6914 !important;letter-spacing:2px;}
 .header .sub{font-size:11px;color:#666 !important;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
@@ -1120,12 +1175,17 @@ hr{border:none;border-top:1px solid #ccc;margin:14px 0;}
 table{border-collapse:collapse;width:100%;margin:12px 0;}
 th{border:1px solid #000;padding:7px 10px;background:#f0e6c8 !important;color:#000 !important;font-weight:bold;text-align:left;}
 td{border:1px solid #555;padding:6px 10px;color:#000 !important;}
-svg{max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;page-break-inside:avoid;image-rendering:auto;}
+svg{max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;box-shadow:none !important;border-radius:0 !important;page-break-inside:avoid;image-rendering:auto;}
 img{max-width:100%;image-rendering:-webkit-optimize-contrast;}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 body{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;}
 .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:12px;text-align:center;font-size:10px;color:#999 !important;}
+@media print{
+  .pagenum{position:fixed;bottom:0.8cm;right:1.4cm;font-size:10pt;color:#444 !important;}
+  .pagenum::after{counter-increment:page;content:"Page "counter(page);}
+}
 </style></head><body>
+<div class="pagenum"></div>
 <div class="header">
 <div class="logo">✦ BRITON SCIENCE</div>
 <div class="sub">Plateforme Éducative — Côte d'Ivoire</div>
@@ -1201,7 +1261,16 @@ scale=scale||2;
 let w=460,h=420;
 const vb=svgStr.match(/viewBox=["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/i);
 if(vb){w=parseFloat(vb[1]);h=parseFloat(vb[2]);}
-const svg64=btoa(unescape(encodeURIComponent(svgStr)));
+// Nettoyer le SVG pour le rendu image : retirer le style décoratif (ombre, bordure, padding)
+// qui crée un effet "feuille collée", et garantir xmlns + dimensions explicites
+let clean=svgStr.replace(/style=("|')[^"']*\1/i,'');
+if(!/xmlns=/.test(clean)){clean=clean.replace(/<svg/i,'<svg xmlns="http://www.w3.org/2000/svg"');}
+// Forcer largeur/hauteur explicites (Word/canvas en ont besoin)
+clean=clean.replace(/<svg([^>]*)>/i,(m,attrs)=>{
+let a=attrs.replace(/\s(width|height)=("|')[^"']*\2/gi,'');
+return '<svg'+a+' width="'+w+'" height="'+h+'">';
+});
+const svg64=btoa(unescape(encodeURIComponent(clean)));
 const img=new Image();
 img.onload=function(){
 const canvas=document.createElement('canvas');
@@ -1224,12 +1293,14 @@ let contentWord=latexToUnicode(content);
 // Convertir chaque figure SVG en image PNG (Word ne lit pas le SVG inline)
 const svgMatches=contentWord.match(/<svg[\s\S]*?<\/svg>/gi)||[];
 for(let i=0;i<svgMatches.length;i++){
-const res=await svgToPng(svgMatches[i],2);
+// Nettoyer le style « carte » (ombre, fond, coins arrondis) pour que la figure ne ressemble pas à une feuille collée
+let cleanSvg=svgMatches[i].replace(/style="[^"]*"/i,'style="background:#ffffff;"');
+const res=await svgToPng(cleanSvg,2.5);
 if(res&&res.png){
-const imgTag='<div style="text-align:center;margin:14px 0;"><img src="'+res.png+'" width="'+Math.round(res.w)+'" height="'+Math.round(res.h)+'" style="max-width:100%;"/></div>';
+const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+res.png+'" width="'+Math.round(res.w)+'" height="'+Math.round(res.h)+'" style="max-width:100%;border:none;"/></p>';
 contentWord=contentWord.replace(svgMatches[i],imgTag);
 }else{
-contentWord=contentWord.replace(svgMatches[i],'<div style="text-align:center;color:#888;">[Figure]</div>');
+contentWord=contentWord.replace(svgMatches[i],'<p style="text-align:center;color:#888;">[Figure non disponible]</p>');
 }
 }
 // Réduire les traits horizontaux excessifs (enlever les <hr> et limiter les sauts de ligne)
@@ -1239,6 +1310,9 @@ contentWord=contentWord.replace(/(<br>\s*){3,}/g,'<br><br>');
 contentWord=contentWord.replace(/color:#fff(f{0,3})?;?/gi,'');
 contentWord=contentWord.replace(/color:#d8d8ea;?/gi,'').replace(/color:#c0b8ff;?/gi,'').replace(/color:#f0f0f8;?/gi,'');
 contentWord=contentWord.replace(/color:#FFD700;?/gi,'color:#000;');
+// Filet de sécurité : supprimer tout résidu de code LaTeX brut que Word ne doit pas afficher
+contentWord=contentWord.replace(/\\?begin\s*\{?array\}?[\s\S]*?\\?end\s*\{?array\}?/gi,'');
+contentWord=contentWord.replace(/\\(searrow|nearrow|hline|displaystyle|limits|left|right|quad|qquad)/g,'');
 const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${titre}</title>
 <style>
 @page Section1{
@@ -1274,10 +1348,10 @@ img{max-width:100%;}
 <span class="bs-head-sub">PLATEFORME ÉDUCATIVE — CÔTE D'IVOIRE</span>
 </p>
 </div>
-<!-- Pied de page Word (zone protégée) -->
+<!-- Pied de page Word (zone protégée) avec numéro de page -->
 <div style="mso-element:footer" id="f1">
 <p class="MsoFooter" style="text-align:center;font-size:9px;color:#999;">
-Briton Science © 2026 — briton-science.pages.dev — Document généré le ${date}
+Briton Science © 2026 — briton-science.pages.dev — Page <span style="mso-field-code:PAGE"></span> / <span style="mso-field-code:NUMPAGES"></span>
 </p>
 </div>
 <!-- Corps du document (modifiable) -->
@@ -1613,6 +1687,7 @@ const needsCurve=/fonction|courbe|exponentielle|logarithme|d[ée]riv[ée]e|limit
 if(needsFigure||needsCurve){
 ivoireRules+=' IMPORTANT — REPRÉSENTATION VISUELLE OBLIGATOIRE.';
 if(needsCurve){
+ivoireRules+=' Pour le TABLEAU DE VARIATION, écris-le TOUJOURS entre $$ ... $$ avec la syntaxe LaTeX \\begin{array}{...} ... \\end{array} (l\'application le convertira en joli tableau). Utilise \\searrow pour décroissante et \\nearrow pour croissante. N\'écris JAMAIS le tableau de variation en texte brut sans les $$.';
 ivoireRules+=' Pour TOUTE courbe ou représentation graphique d\'une fonction, tu DOIS insérer un bloc spécial de tracé au format EXACT suivant (l\'application le transformera en une belle courbe précise) :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) en fonction de x)\nasymptote: y=... ou x=...\ntangente: y=... (équation de la tangente)\ndroite: y=...\nbranche: (expression de la branche parabolique)\npoint: (x, y) Nom\n]]\nRègles du bloc PLOT : écris l\'expression de la fonction avec x comme variable (ex : courbe: exp(x)/x , ou courbe: (x^2-1)/(x+2) , ou courbe: ln(x)+2*x). Utilise les fonctions exp(), ln(), sqrt(), cos(), sin(), abs(), et ^ pour les puissances. Choisis des bornes x et y adaptées pour bien voir la courbe. Ajoute une ligne "asymptote:", "tangente:", "branche:", "droite:" ou "point:" UNIQUEMENT si le sujet le demande. Tu peux mettre plusieurs lignes "courbe:" pour plusieurs fonctions. Place ce bloc [[PLOT:...]] juste après le tableau de variation. NE dessine PAS la courbe en SVG toi-même : utilise UNIQUEMENT le bloc [[PLOT:...]] pour les courbes de fonctions.';
 }
 if(needsFigure){
