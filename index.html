@@ -962,43 +962,48 @@ return svg;
 // Convertit les tableaux LaTeX \begin{array}...\end{array} (tableaux de variation/signe) en vrais tableaux HTML
 function convertArrayTables(text){
 if(!text)return text;
-// Gérer la forme avec backslashes ET la forme « nettoyée » (beginarray sans backslash)
-// 1) Repérer un bloc array, éventuellement entouré de $...$ ou $$...$$
 const reArr=/\${0,2}\s*\\?begin\s*\{?array\}?\s*(\{[^}]*\})?([\s\S]*?)\\?end\s*\{?array\}?\s*\${0,2}/gi;
 return text.replace(reArr,(m,colspec,body)=>{
 try{
-// Nettoyer le corps : retirer \hline, hline, et découper en lignes sur \\ ou retours
 let b=body;
 b=b.replace(/\\?hline/g,'');
-// Les lignes sont séparées par \\ (ou \\\\). Dans la forme nettoyée, par des retours à la ligne.
 let rows=b.split(/\\\\|\n/).map(r=>r.trim()).filter(r=>r.length);
 if(!rows.length)return '';
-// Convertir chaque cellule
-const arrow=s=>s
+// Convertir le contenu d'une cellule (symboles + fractions + flèches)
+const conv=s=>s
+.replace(/\\?dfrac\{([^{}]+)\}\{([^{}]+)\}/g,'$1∕$2')
+.replace(/\\?frac\{([^{}]+)\}\{([^{}]+)\}/g,'$1∕$2')
+.replace(/\\?sqrt\{([^{}]+)\}/g,'√$1')
 .replace(/\\?searrow/g,'↘').replace(/\\?nearrow/g,'↗')
-.replace(/\\?rightarrow/g,'→').replace(/\\?to\b/g,'→')
 .replace(/\\?nwarrow/g,'↖').replace(/\\?swarrow/g,'↙')
+.replace(/\\?rightarrow/g,'→').replace(/\\?Rightarrow/g,'⇒').replace(/\\?to\b/g,'→')
 .replace(/\\?uparrow/g,'↑').replace(/\\?downarrow/g,'↓')
 .replace(/\\?pm/g,'±').replace(/\\?mp/g,'∓')
 .replace(/\\?infty/g,'∞').replace(/\+\s*∞/g,'+∞').replace(/-\s*∞/g,'−∞')
-.replace(/\\?times/g,'×').replace(/\\?cdot/g,'·')
-.replace(/\\?leq/g,'≤').replace(/\\?geq/g,'≥').replace(/\\?neq/g,'≠')
-.replace(/\\?alpha/g,'α').replace(/\\?beta/g,'β').replace(/\\?lambda/g,'λ').replace(/\\?mu/g,'μ').replace(/\\?pi\b/g,'π')
-.replace(/\\?quad/g,' ').replace(/\\?,/g,'').replace(/\\?;/g,' ').replace(/\\?!/g,'')
-.replace(/\\?frac\{([^{}]+)\}\{([^{}]+)\}/g,'($1)/($2)')
-.replace(/\\?sqrt\{([^{}]+)\}/g,'√($1)')
-.replace(/\^\{([^{}]+)\}/g,'^$1').replace(/_\{([^{}]+)\}/g,'_$1')
+.replace(/\\?times/g,'×').replace(/\\?cdot/g,'·').replace(/\\?div/g,'÷')
+.replace(/\\?leq/g,'≤').replace(/\\?geq/g,'≥').replace(/\\?neq/g,'≠').replace(/\\?approx/g,'≈')
+.replace(/\\?alpha/g,'α').replace(/\\?beta/g,'β').replace(/\\?lambda/g,'λ').replace(/\\?mu/g,'μ').replace(/\\?pi\b/g,'π').replace(/\\?theta/g,'θ')
+.replace(/\\?quad/g,' ').replace(/\\?qquad/g,'  ').replace(/\\?,/g,'').replace(/\\?;/g,' ').replace(/\\?!/g,'').replace(/\\?\s/g,' ')
+.replace(/e\^\{([^{}]+)\}/g,'e^($1)').replace(/\^\{([^{}]+)\}/g,'^$1').replace(/_\{([^{}]+)\}/g,'_$1')
 .replace(/[{}]/g,'').replace(/\\/g,'').trim();
-let htmlRows=rows.map((row,ri)=>{
-const cells=row.split('&').map(c=>arrow(c));
-const tag='td';
+// Découper chaque ligne en cellules
+let grid=rows.map(r=>r.split('&').map(c=>conv(c)));
+const maxCols=Math.max(...grid.map(r=>r.length));
+// Normaliser le nombre de colonnes (compléter les lignes courtes)
+grid=grid.map(r=>{while(r.length<maxCols)r.push('');return r;});
+let htmlRows=grid.map((cells,ri)=>{
 const isHeader=ri===0;
-return '<tr>'+cells.map(c=>{
-const style='border:1px solid #555;padding:6px 12px;text-align:center;'+(isHeader?'background:#f0e6c8;font-weight:bold;':'')+(c.match(/↘|↗|↑|↓/)?'font-size:18px;':'');
-return '<'+tag+' style="'+style+'">'+(c||'&nbsp;')+'</'+tag+'>';
+return '<tr>'+cells.map((c,ci)=>{
+const isArrow=/↘|↗|↑|↓|↖|↙/.test(c);
+const firstCol=ci===0;
+let style='border:1px solid #333;padding:5px 10px;text-align:center;vertical-align:middle;';
+if(isHeader)style+='background:#f0e6c8;font-weight:bold;';
+if(firstCol)style+='font-weight:bold;background:#faf6ea;';
+if(isArrow)style+='font-size:17px;color:#1f6f3f;';
+return '<td style="'+style+'">'+(c||'&nbsp;')+'</td>';
 }).join('')+'</tr>';
 }).join('');
-return '<div style="margin:14px 0;"><table style="border-collapse:collapse;margin:0 auto;min-width:60%;font-family:\'Times New Roman\',serif;">'+htmlRows+'</table></div>';
+return '<div style="margin:14px 0;overflow-x:auto;"><table style="border-collapse:collapse;margin:0 auto;font-family:\'Times New Roman\',serif;font-size:14px;">'+htmlRows+'</table></div>';
 }catch(e){return '';}
 });
 }
@@ -1009,12 +1014,24 @@ if(!text)return '';
 text=text.replace(/\[\[PLOT:([\s\S]*?)\]\]/gi,(m,spec)=>renderPlot(spec));
 // Nettoyer un bloc PLOT incomplet (coupé) pour ne jamais afficher de code brut
 text=text.replace(/\[\[PLOT:[\s\S]*$/i,'');
+// 0a-pre. Nettoyer un tableau \begin{array} TRONQUÉ (ouvert mais jamais fermé par la limite de jetons)
+// On teste s'il y a un begin array sans end array correspondant à la fin -> on coupe le résidu
+{
+const lastBegin=Math.max(text.lastIndexOf('\\begin{array}'),text.toLowerCase().lastIndexOf('begin{array}'),text.toLowerCase().lastIndexOf('beginarray'));
+const lastEnd=Math.max(text.lastIndexOf('\\end{array}'),text.toLowerCase().lastIndexOf('end{array}'),text.toLowerCase().lastIndexOf('endarray'));
+if(lastBegin>-1&&lastBegin>lastEnd){text=text.substring(0,lastBegin).replace(/\${0,2}\s*$/,'');}
+}
 // 0a-bis. Convertir les tableaux de variation LaTeX (\begin{array}...\end{array}) en vrais tableaux HTML
 text=convertArrayTables(text);
+// 0a-ter. Gérer \boxed{...} (encadré de résultat) où qu'il soit, même hors $...$
+// \boxed{contenu} -> contenu mis en évidence
+text=text.replace(/\\boxed\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g,(m,inner)=>'$$'+inner+'$$');
+// Forme déjà dé-backslashée "boxed..." en début de ligne (résidu d'un export) -> retirer le mot
+text=text.replace(/(^|\n)\s*boxed\s*/g,'$1');
 // 0b. Protéger les figures SVG (géométrie) ET les tableaux de variation générés pour qu'ils s'affichent
 const svgs=[];
 // Protéger d'abord les tableaux de variation (div contenant un table) déjà convertis en HTML
-text=text.replace(/<div style="margin:14px 0;"><table[\s\S]*?<\/table><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
+text=text.replace(/<div style="margin:14px 0;[^"]*"><table[\s\S]*?<\/table><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
 text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
 // Rendre le SVG responsive et centré
 let svg=m.replace(/<svg/i,'<svg style="max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"');
@@ -1158,9 +1175,12 @@ return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};<\/script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"><\/script>
 <style>
-@page{margin:2cm 2cm 2.4cm 2cm;}
+@page{
+  margin:2cm 2cm 2.4cm 2cm;
+  @bottom-right{content:"Page "counter(page)" / "counter(pages);font-family:'Times New Roman',serif;font-size:10pt;color:#444;}
+}
 *{color:#000 !important;}
-body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;counter-reset:page;}
+body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;}
 .header{text-align:center;border-bottom:3px solid #B8860B;padding-bottom:16px;margin-bottom:24px;}
 .header .logo{font-family:'Times New Roman',serif;font-size:26px;font-weight:bold;color:#8B6914 !important;letter-spacing:2px;}
 .header .sub{font-size:11px;color:#666 !important;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
@@ -1180,12 +1200,7 @@ img{max-width:100%;image-rendering:-webkit-optimize-contrast;}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 body{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;}
 .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:12px;text-align:center;font-size:10px;color:#999 !important;}
-@media print{
-  .pagenum{position:fixed;bottom:0.8cm;right:1.4cm;font-size:10pt;color:#444 !important;}
-  .pagenum::after{counter-increment:page;content:"Page "counter(page);}
-}
 </style></head><body>
-<div class="pagenum"></div>
 <div class="header">
 <div class="logo">✦ BRITON SCIENCE</div>
 <div class="sub">Plateforme Éducative — Côte d'Ivoire</div>
@@ -1208,6 +1223,7 @@ return s.replace(/\$\$([\s\S]*?)\$\$|\$([^\$\n]*?)\$/g,(m,a,b)=>{
 let f=a||b||'';
 // Commandes courantes
 f=f.replace(/\\displaystyle/g,'');
+f=f.replace(/\\boxed\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g,'[ $1 ]');
 f=f.replace(/\\left\(/g,'(').replace(/\\right\)/g,')').replace(/\\left\[/g,'[').replace(/\\right\]/g,']').replace(/\\left/g,'').replace(/\\right/g,'');
 f=f.replace(/\\dfrac\{([^{}]+)\}\{([^{}]+)\}/g,'($1)/($2)');
 f=f.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g,'($1)/($2)');
@@ -1295,9 +1311,14 @@ const svgMatches=contentWord.match(/<svg[\s\S]*?<\/svg>/gi)||[];
 for(let i=0;i<svgMatches.length;i++){
 // Nettoyer le style « carte » (ombre, fond, coins arrondis) pour que la figure ne ressemble pas à une feuille collée
 let cleanSvg=svgMatches[i].replace(/style="[^"]*"/i,'style="background:#ffffff;"');
-const res=await svgToPng(cleanSvg,2.5);
+const res=await svgToPng(cleanSvg,2);
 if(res&&res.png){
-const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+res.png+'" width="'+Math.round(res.w)+'" height="'+Math.round(res.h)+'" style="max-width:100%;border:none;"/></p>';
+// Dimensions d'affichage en pixels (limiter la largeur à ~440px pour tenir dans la page A4)
+let dispW=Math.round(res.w),dispH=Math.round(res.h);
+const maxW=440;
+if(dispW>maxW){const r=maxW/dispW;dispW=maxW;dispH=Math.round(dispH*r);}
+// <img> avec dimensions explicites — Word lit les data-URI PNG quand width/height sont fixés en px
+const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+res.png+'" width="'+dispW+'" height="'+dispH+'" alt="figure" style="width:'+dispW+'px;height:'+dispH+'px;"/></p>';
 contentWord=contentWord.replace(svgMatches[i],imgTag);
 }else{
 contentWord=contentWord.replace(svgMatches[i],'<p style="text-align:center;color:#888;">[Figure non disponible]</p>');
@@ -1351,7 +1372,7 @@ img{max-width:100%;}
 <!-- Pied de page Word (zone protégée) avec numéro de page -->
 <div style="mso-element:footer" id="f1">
 <p class="MsoFooter" style="text-align:center;font-size:9px;color:#999;">
-Briton Science © 2026 — briton-science.pages.dev — Page <span style="mso-field-code:PAGE"></span> / <span style="mso-field-code:NUMPAGES"></span>
+Briton Science © 2026 — briton-science.pages.dev — Page <!--[if supportFields]><span style='mso-element:field-begin'></span>PAGE <span style='mso-element:field-separator'></span><![endif]--><span>1</span><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]--> / <!--[if supportFields]><span style='mso-element:field-begin'></span>NUMPAGES <span style='mso-element:field-separator'></span><![endif]--><span>1</span><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]-->
 </p>
 </div>
 <!-- Corps du document (modifiable) -->
@@ -1668,6 +1689,11 @@ const subj=findSubject(S.subject);
 // Règles spécifiques au système éducatif ivoirien (coefficients officiels + complexité)
 const lvlLabel=getLevelLabel();
 let ivoireRules='';
+const isMathLike=S.subject==='maths'||/math|fonction|courbe|équation|calcul|g[ée]om|d[ée]riv|limite|int[ée]gr|physique|chimie/i.test((S.subject||'')+' '+(S.topic||''));
+// Règle de formatage mathématique universelle (évite que du code LaTeX brut apparaisse dans le document)
+if(isMathLike){
+ivoireRules+=' FORMATAGE MATHÉMATIQUE STRICT : écris TOUTE expression mathématique (limites, fractions, exposants, racines, intégrales, résultats encadrés) entre $ ... $ (en ligne) ou $$ ... $$ (centré). N\'utilise JAMAIS la commande \\boxed ; pour mettre un résultat en évidence, écris simplement « Résultat : $...$ » ou place-le entre $$ ... $$. N\'écris JAMAIS de code LaTeX (\\frac, \\lim, \\sqrt, \\begin, etc.) en dehors des délimiteurs $ ou $$. Termine TOUJOURS un tableau \\begin{array} par \\end{array} avant la fin de ta réponse ; si tu manques de place, raccourcis le contenu mais ne laisse jamais un tableau ou une formule inachevée.';
+}
 const isMaths=S.subject==='maths';
 const isTermC=S.sub==='TC';
 const isTermD=S.sub==='TD';
