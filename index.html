@@ -964,6 +964,8 @@ function mdFormat(text){
 if(!text)return '';
 // 0a. Traiter les blocs [[PLOT: ...]] -> courbe tracée précisément en JS
 text=text.replace(/\[\[PLOT:([\s\S]*?)\]\]/gi,(m,spec)=>renderPlot(spec));
+// Nettoyer un bloc PLOT incomplet (coupé) pour ne jamais afficher de code brut
+text=text.replace(/\[\[PLOT:[\s\S]*$/i,'');
 // 0b. Protéger les figures SVG (géométrie) pour qu'elles s'affichent
 const svgs=[];
 text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
@@ -971,6 +973,34 @@ text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
 let svg=m.replace(/<svg/i,'<svg style="max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"');
 svgs.push(svg);return '\u0001'+(svgs.length-1)+'\u0001';
 });
+// Nettoyer un SVG incomplet (balise ouvrante sans fermeture, coupé par la limite) + fragments de code SVG orphelins
+text=text.replace(/<svg[\s\S]*$/i,'');
+// Retirer les commentaires XML/SVG (mono ou multi-lignes) que l'IA insère parfois
+text=text.replace(/<!--[\s\S]*?-->/g,'');
+text=text.replace(/<!--[\s\S]*$/g,'');
+// Lignes qui sont en réalité du code SVG/XML brut (orphelin ou tronqué) : on les retire
+text=text.split('\n').filter(line=>{
+const l=line.trim();
+if(!l)return true;
+// Lignes de balises SVG (ouvrantes, fermantes, ou auto-fermantes)
+if(/^<\/?(svg|rect|polygon|circle|line|path|text|g|ellipse|polyline|defs|marker|tspan|use|symbol|clipPath|linearGradient|radialGradient|stop|pattern)\b/i.test(l))return false;
+// Lignes commençant par un nom de balise SVG SANS le chevron (cas tronqué : "rect width=...")
+if(/^(rect|polygon|circle|line|path|text|ellipse|polyline|g|svg|tspan)\s+[a-z-]+\s*=\s*["']/i.test(l))return false;
+// Lignes commençant par un attribut SVG typique ("points=...", "fill=...", "x1=...")
+if(/^(points|x|y|x1|y1|x2|y2|cx|cy|r|rx|ry|d|dx|dy|width|height|fill|stroke|stroke-width|stroke-dasharray|viewBox|font-size|font-weight|font-family|text-anchor|transform|opacity|offset|stop-color|marker-end|marker-start)\s*=\s*["']/i.test(l))return false;
+// Lignes qui se terminent par /> ou > et contiennent des attributs SVG mais aucune vraie ouverture de balise visible
+if(/(\/>|">)\s*$/.test(l)&&/(fill|stroke|points|cx|cy|x1|y1|viewBox|font-size)\s*=/.test(l)&&!/^[A-Za-zÀ-ÿ0-9(]/.test(l))return false;
+// Lignes du type "...">TEXTE</text>" (fragment de balise text tronquée en tête)
+if(/^[^<]*<\/(text|tspan|g|svg)>/i.test(l)&&/="/.test(l))return false;
+return true;
+}).join('\n');
+// Retirer une éventuelle ligne orpheline finissant par </text> ou </polygon> etc. collée à du texte
+text=text.replace(/^[^\n<]*<\/(text|polygon|line|path|circle|rect|g)>\s*$/gim,'');
+// Retirer les annonces textuelles « SVG » que les élèves ne doivent pas voir
+text=text.replace(/^\s*(voici\s+le\s+|le\s+|code\s+)?svg\s*:?\s*$/gim,'');
+text=text.replace(/\bvoici le svg\b\s*:?/gi,'Voici la figure :');
+text=text.replace(/\bcode svg\b\s*:?/gi,'figure :');
+text=text.replace(/\(\s*svg\s*\)/gi,'');
 // 1. Protéger les formules LaTeX ($...$ et $$...$$)
 const math=[];
 text=text.replace(/\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$/g,m=>{math.push(m);return '\u0000'+(math.length-1)+'\u0000';});
@@ -1059,31 +1089,49 @@ setTimeout(()=>{document.body.removeChild(iframe);},2000);
 // Construire le HTML d'impression (avec MathJax + en-tête Briton Science)
 function buildPrintHTML(content,titre){
 const date=new Date().toLocaleDateString('fr-FR');
+// Nettoyer les couleurs sombres (thème écran) pour un PDF lisible : titres en gras doré foncé, reste en noir
+let c=content;
+// Retirer les couleurs claires inline destinées au fond sombre
+c=c.replace(/color:#fff(f{0,3})?;?/gi,'');
+c=c.replace(/color:#d8d8ea;?/gi,'');
+c=c.replace(/color:#c0b8ff;?/gi,'');
+c=c.replace(/color:#f0f0f8;?/gi,'');
+// Convertir les titres dorés clairs en doré foncé lisible
+c=c.replace(/color:#FFD700;?/gi,'color:#000;');
 return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <title>${titre}</title>
 <script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};<\/script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"><\/script>
 <style>
 @page{margin:2cm;}
-body{font-family:Georgia,'Times New Roman',serif;color:#1a1a2e;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;}
+*{color:#000 !important;}
+body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;}
 .header{text-align:center;border-bottom:3px solid #B8860B;padding-bottom:16px;margin-bottom:24px;}
-.header .logo{font-family:'Georgia',serif;font-size:26px;font-weight:bold;color:#B8860B;letter-spacing:2px;}
-.header .sub{font-size:11px;color:#666;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
-.header .date{font-size:11px;color:#999;margin-top:6px;}
-h1{color:#B8860B;font-size:20px;border-bottom:1px solid #ddd;padding-bottom:6px;}
-h2{color:#B8860B;font-size:17px;margin-top:20px;border-bottom:1px solid #eee;padding-bottom:4px;}
-h3{color:#8B6914;font-size:15px;margin-top:14px;}
-strong{color:#000;}
-em{color:#555;}
+.header .logo{font-family:'Times New Roman',serif;font-size:26px;font-weight:bold;color:#8B6914 !important;letter-spacing:2px;}
+.header .sub{font-size:11px;color:#666 !important;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
+.header .date{font-size:11px;color:#999 !important;margin-top:6px;}
+h1,h2,h3{font-family:'Times New Roman',serif;font-weight:bold;color:#000 !important;}
+h1{font-size:18pt;border-bottom:2px solid #B8860B;padding-bottom:6px;margin-top:18px;}
+h2{font-size:15pt;margin-top:18px;border-bottom:1px solid #ccc;padding-bottom:4px;}
+h3{font-size:13.5pt;margin-top:14px;}
+strong,b{font-weight:bold;color:#000 !important;}
+em{font-style:italic;color:#000 !important;}
 hr{border:none;border-top:1px solid #ccc;margin:14px 0;}
-.footer{margin-top:30px;border-top:1px solid #ddd;padding-top:12px;text-align:center;font-size:10px;color:#999;}
+table{border-collapse:collapse;width:100%;margin:12px 0;}
+th{border:1px solid #000;padding:7px 10px;background:#f0e6c8 !important;color:#000 !important;font-weight:bold;text-align:left;}
+td{border:1px solid #555;padding:6px 10px;color:#000 !important;}
+svg{max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;page-break-inside:avoid;image-rendering:auto;}
+img{max-width:100%;image-rendering:-webkit-optimize-contrast;}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+body{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;}
+.footer{margin-top:30px;border-top:1px solid #ddd;padding-top:12px;text-align:center;font-size:10px;color:#999 !important;}
 </style></head><body>
 <div class="header">
 <div class="logo">✦ BRITON SCIENCE</div>
 <div class="sub">Plateforme Éducative — Côte d'Ivoire</div>
 <div class="date">Document généré le ${date}</div>
 </div>
-<div class="content">${content}</div>
+<div class="content">${c}</div>
 <div class="footer">Briton Science © 2026 — briton-science.pages.dev</div>
 </body></html>`;
 }
@@ -1144,13 +1192,53 @@ return f.trim();
 });
 }
 
-function downloadWord(content,titre){
+// Convertit un SVG (chaîne) en image PNG (data-URI) via canvas — pour Word
+function svgToPng(svgStr,scale){
+return new Promise(resolve=>{
+try{
+scale=scale||2;
+// Extraire les dimensions du viewBox
+let w=460,h=420;
+const vb=svgStr.match(/viewBox=["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/i);
+if(vb){w=parseFloat(vb[1]);h=parseFloat(vb[2]);}
+const svg64=btoa(unescape(encodeURIComponent(svgStr)));
+const img=new Image();
+img.onload=function(){
+const canvas=document.createElement('canvas');
+canvas.width=w*scale;canvas.height=h*scale;
+const ctx=canvas.getContext('2d');
+ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.drawImage(img,0,0,canvas.width,canvas.height);
+try{resolve({png:canvas.toDataURL('image/png'),w:w,h:h});}catch(e){resolve(null);}
+};
+img.onerror=function(){resolve(null);};
+img.src='data:image/svg+xml;base64,'+svg64;
+}catch(e){resolve(null);}
+});
+}
+
+async function downloadWord(content,titre){
 const date=new Date().toLocaleDateString('fr-FR');
 // Convertir les formules LaTeX en Unicode lisible pour Word
 let contentWord=latexToUnicode(content);
+// Convertir chaque figure SVG en image PNG (Word ne lit pas le SVG inline)
+const svgMatches=contentWord.match(/<svg[\s\S]*?<\/svg>/gi)||[];
+for(let i=0;i<svgMatches.length;i++){
+const res=await svgToPng(svgMatches[i],2);
+if(res&&res.png){
+const imgTag='<div style="text-align:center;margin:14px 0;"><img src="'+res.png+'" width="'+Math.round(res.w)+'" height="'+Math.round(res.h)+'" style="max-width:100%;"/></div>';
+contentWord=contentWord.replace(svgMatches[i],imgTag);
+}else{
+contentWord=contentWord.replace(svgMatches[i],'<div style="text-align:center;color:#888;">[Figure]</div>');
+}
+}
 // Réduire les traits horizontaux excessifs (enlever les <hr> et limiter les sauts de ligne)
 contentWord=contentWord.replace(/<hr[^>]*>/g,'');
 contentWord=contentWord.replace(/(<br>\s*){3,}/g,'<br><br>');
+// Forcer texte noir + Times New Roman : retirer les couleurs claires du thème sombre
+contentWord=contentWord.replace(/color:#fff(f{0,3})?;?/gi,'');
+contentWord=contentWord.replace(/color:#d8d8ea;?/gi,'').replace(/color:#c0b8ff;?/gi,'').replace(/color:#f0f0f8;?/gi,'');
+contentWord=contentWord.replace(/color:#FFD700;?/gi,'color:#000;');
 const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${titre}</title>
 <style>
 @page Section1{
@@ -1162,15 +1250,18 @@ const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn
   mso-footer:url("filelist.xml") f1;
 }
 div.Section1{page:Section1;}
-body{font-family:Georgia,serif;color:#1a1a2e;line-height:1.7;}
+body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;font-size:12pt;}
 p.MsoHeader,p.MsoFooter{margin:0;}
-.bs-head-logo{font-size:22px;font-weight:bold;color:#B8860B;font-family:Georgia,serif;letter-spacing:1px;}
+.bs-head-logo{font-size:22px;font-weight:bold;color:#8B6914;font-family:'Times New Roman',serif;letter-spacing:1px;}
 .bs-head-sub{font-size:9px;color:#666;letter-spacing:1px;}
-h1{color:#B8860B;font-size:18px;}h2{color:#B8860B;font-size:15px;}h3{color:#8B6914;font-size:14px;}
-strong{color:#000;}
+h1,h2,h3{font-family:'Times New Roman',serif;font-weight:bold;color:#000;}
+h1{font-size:17pt;}h2{font-size:14pt;}h3{font-size:13pt;}
+strong,b{font-weight:bold;color:#000;}
+em{font-style:italic;color:#000;}
 table{border-collapse:collapse;width:100%;margin:12px 0;}
-th{border:1px solid #B8860B;padding:7px 10px;background:#FBF3DD;color:#8B6914;text-align:left;}
-td{border:1px solid #ccc;padding:6px 10px;color:#1a1a2e;}
+th{border:1px solid #000;padding:7px 10px;background:#f0e6c8;color:#000;font-weight:bold;text-align:left;}
+td{border:1px solid #555;padding:6px 10px;color:#000;}
+img{max-width:100%;}
 .doc-title{text-align:center;border-bottom:2px solid #B8860B;padding-bottom:8px;margin-bottom:18px;}
 </style>
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:ProtectFormatting/></w:WordDocument></xml><![endif]-->
@@ -1525,7 +1616,7 @@ if(needsCurve){
 ivoireRules+=' Pour TOUTE courbe ou représentation graphique d\'une fonction, tu DOIS insérer un bloc spécial de tracé au format EXACT suivant (l\'application le transformera en une belle courbe précise) :\n[[PLOT:\nx: [-5, 5]\ny: [-5, 5]\ncourbe: (expression de f(x) en fonction de x)\nasymptote: y=... ou x=...\ntangente: y=... (équation de la tangente)\ndroite: y=...\nbranche: (expression de la branche parabolique)\npoint: (x, y) Nom\n]]\nRègles du bloc PLOT : écris l\'expression de la fonction avec x comme variable (ex : courbe: exp(x)/x , ou courbe: (x^2-1)/(x+2) , ou courbe: ln(x)+2*x). Utilise les fonctions exp(), ln(), sqrt(), cos(), sin(), abs(), et ^ pour les puissances. Choisis des bornes x et y adaptées pour bien voir la courbe. Ajoute une ligne "asymptote:", "tangente:", "branche:", "droite:" ou "point:" UNIQUEMENT si le sujet le demande. Tu peux mettre plusieurs lignes "courbe:" pour plusieurs fonctions. Place ce bloc [[PLOT:...]] juste après le tableau de variation. NE dessine PAS la courbe en SVG toi-même : utilise UNIQUEMENT le bloc [[PLOT:...]] pour les courbes de fonctions.';
 }
 if(needsFigure){
-ivoireRules+=' Pour les FIGURES GÉOMÉTRIQUES (triangles, cercles, quadrilatères, solides, angles...), dessine-les en SVG natif complet (<svg viewBox="0 0 300 300">...</svg>) avec : les sommets nommés (A, B, C...), les longueurs indiquées, les angles marqués, le codage des segments égaux et des angles droits (petit carré). Traits noirs nets (stroke="black" stroke-width="2") sur fond blanc, étiquettes lisibles avec <text>. Dessine de vraies formes fermées avec <polygon> ou <path>, pas de simples traits isolés. Vérifie que les coordonnées forment bien la figure demandée.';
+ivoireRules+=' Pour les FIGURES GÉOMÉTRIQUES (triangles, cercles, quadrilatères, solides, angles...), dessine-les en SVG natif COMPLET et COMPACT (<svg viewBox="0 0 300 260">...</svg>) avec : les sommets nommés (A, B, C...), les longueurs indiquées, les angles marqués, le codage des segments égaux et des angles droits (petit carré). Traits noirs nets (stroke="black" stroke-width="2") sur fond blanc, étiquettes lisibles avec <text>. Dessine de vraies formes fermées avec <polygon> ou <path>, pas de simples traits isolés. IMPÉRATIF : place la figure TÔT dans le cours (juste après la définition de la forme, PAS à la fin) pour qu\'elle soit toujours complète. Garde le SVG court (moins de 25 lignes) et termine-le TOUJOURS par </svg> ; ne mets JAMAIS de commentaires <!-- --> dans le SVG ; vérifie que la balise est bien fermée avant de continuer le texte. N\'écris JAMAIS le mot « SVG » dans le texte visible du cours (les élèves ne connaissent pas ce terme) : présente simplement « Figure : ... » ou « Voici la figure ». Insère directement la balise sans l\'annoncer comme du code.';
 }
 }
 const system=isLesson
