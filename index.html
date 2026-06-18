@@ -1132,8 +1132,8 @@ xRow=xRow.filter((c,i)=>!(c===''&&(i===0||i===xRow.length-1)));
 const n=xRow.length; // nombre de valeurs remarquables (colonnes de bornes)
 if(n<2)return '';
 // Géométrie du tableau
-const mx=16; // marge horizontale pour ne pas couper les valeurs aux bords (ex +∞)
-const labelW=92, colW=Math.max(96,Math.min(150,Math.round(520/(n-1)))), W=labelW+colW*(n-1)+mx*2, rowH=46, signH=46, varH=92;
+const mx=20; // marge horizontale pour ne pas couper les valeurs aux bords (ex +∞)
+const labelW=68, colW=Math.max(90,Math.min(140,Math.round(520/(n-1)))), W=labelW+colW*(n-1)+mx*2, rowH=44, signH=44, varH=88;
 const H=rowH+ (signRow?signH:0) + varH;
 const fs=15;
 let svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="max-width:100%;height:auto;display:block;margin:14px auto;background:#fff;font-family:\'Times New Roman\',serif;">';
@@ -1235,26 +1235,63 @@ const sym=s=>(s||'').trim()
 .replace(/\\?searrow/gi,'↘').replace(/\\?nearrow/gi,'↗')
 .replace(/\+\s*inf(ini|ty)?/gi,'+∞').replace(/-\s*inf(ini|ty)?/gi,'−∞').replace(/\binf(ini|ty)?\b/gi,'∞')
 .replace(/\bracine\(([^)]+)\)/gi,'√($1)').replace(/\bsqrt\(([^)]+)\)/gi,'√($1)').replace(/\bpi\b/gi,'π');
-let rows=[];
+let xRow=null,signRow=null,varRow=null,dlabel="f '(x)",flabel='f(x)';
 spec.split(/\n/).forEach(raw=>{
 const ln=raw.trim();if(!ln)return;
 const mm=ln.match(/^([^:]+):\s*(.*)$/);if(!mm)return;
-rows.push({label:mm[1].trim(),cells:mm[2].split('|').map(c=>sym(c))});
+const lab=mm[1].trim();
+const cells=mm[2].split('|').map(c=>sym(c));
+if(/^x$/i.test(lab))xRow=cells;
+else if(/'|signe|d[ée]riv/i.test(lab)){signRow=cells;dlabel=lab;}
+else if(/^(f|g|h|fonction|var)/i.test(lab)){varRow=cells;flabel=lab;}
 });
-if(!rows.length)return '';
-const maxC=Math.max(...rows.map(r=>r.cells.length));
-const bd='border:1px solid #000;padding:6px 12px;text-align:center;';
-let html='<table style="border-collapse:collapse;margin:14px auto;font-family:\'Times New Roman\',serif;font-size:13pt;">';
-rows.forEach((r,ri)=>{
-html+='<tr>';
-html+='<td style="'+bd+'font-weight:bold;background:#f0e6c8;">'+(r.label||'')+'</td>';
-for(let i=0;i<maxC;i++){
-let c=r.cells[i]!==undefined?r.cells[i]:'';
-const isArrow=/[↗↘↑↓]/.test(c);
-html+='<td style="'+bd+(ri===0?'font-weight:bold;':'')+(isArrow?'font-size:16pt;color:#1f6f3f;':'')+'">'+(c||'&nbsp;')+'</td>';
+if(!xRow)return '';
+// Nettoyer les cellules vides de bordure de xRow
+xRow=xRow.filter(c=>c!=='');
+const n=xRow.length; if(n<2)return '';
+// On construit (2n-1) colonnes de contenu : [borne0][intervalle][borne1][intervalle]...[borneN]
+// colonnes paires = bornes (x-values), colonnes impaires = intervalles (signes / flèches)
+const nCol=2*n-1;
+const bd='border:1px solid #000;text-align:center;vertical-align:middle;';
+const pad='padding:6px 10px;';
+let html='<table style="border-collapse:collapse;margin:14px auto;font-family:\'Times New Roman\',serif;font-size:13pt;min-width:60%;">';
+// Ligne x
+html+='<tr><td style="'+bd+pad+'font-weight:bold;background:#f0e6c8;">x</td>';
+for(let c=0;c<nCol;c++){
+if(c%2===0){html+='<td style="'+bd+pad+'font-weight:bold;background:#f0e6c8;">'+(xRow[c/2]||'')+'</td>';}
+else{html+='<td style="'+bd+pad+'background:#f0e6c8;">&nbsp;</td>';}
 }
 html+='</tr>';
-});
+// Ligne signe f'(x) : signes dans les colonnes impaires (intervalles), 0 sous les bornes intérieures si présent
+if(signRow){
+let signs=signRow.filter(s=>s!=='');
+html+='<tr><td style="'+bd+pad+'font-weight:bold;background:#faf6ea;">'+dlabel+'</td>';
+let si=0;
+for(let c=0;c<nCol;c++){
+if(c%2===1){html+='<td style="'+bd+pad+'font-weight:bold;">'+(signs[si]!==undefined?signs[si]:'')+'</td>';si++;}
+else{
+// borne : afficher 0 si la dérivée s'annule (changement de signe autour)
+const bi=c/2;let val='';
+if(bi>0&&bi<n-1){const a=signs[bi-1]||'',b=signs[bi]||'';if((/\+/.test(a)&&/[-−]/.test(b))||(/[-−]/.test(a)&&/\+/.test(b)))val='0';}
+html+='<td style="'+bd+pad+'">'+(val||'&nbsp;')+'</td>';
+}
+}
+html+='</tr>';
+}
+// Ligne variation f(x) : valeurs dans les colonnes paires (bornes), flèches dans les impaires
+if(varRow){
+let toks=varRow.filter(c=>c!=='');
+let values=[],dirs=[];
+toks.forEach(t=>{if(/^[↗↘↑↓]$/.test(t))dirs.push(t);else values.push(t);});
+if(dirs.length===0&&signRow){let signs=signRow.filter(s=>s!=='');for(let i=0;i<values.length-1;i++){const sg=signs[i]||'';dirs.push(/\+/.test(sg)?'↗':'↘');}}
+html+='<tr><td style="'+bd+pad+'font-weight:bold;background:#faf6ea;">'+flabel+'</td>';
+let vi=0,di=0;
+for(let c=0;c<nCol;c++){
+if(c%2===0){html+='<td style="'+bd+pad+'font-weight:bold;">'+(values[vi]!==undefined?values[vi]:'')+'</td>';vi++;}
+else{const ar=dirs[di]!==undefined?dirs[di]:'';html+='<td style="'+bd+pad+'font-size:16pt;color:#1f6f3f;">'+(ar||'&nbsp;')+'</td>';di++;}
+}
+html+='</tr>';
+}
 html+='</table>';
 return html;
 }catch(e){return '';}
@@ -1548,7 +1585,17 @@ img{max-width:100%;image-rendering:-webkit-optimize-contrast;}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 body{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;}
 .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:12px;text-align:center;font-size:10px;color:#999 !important;}
+.print-bar{position:fixed;top:0;left:0;right:0;background:#07071a;padding:10px;text-align:center;z-index:9999;box-shadow:0 2px 10px rgba(0,0,0,0.3);}
+.print-bar button{background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a !important;border:none;padding:11px 26px;border-radius:8px;font-weight:bold;font-size:15px;cursor:pointer;font-family:Arial,sans-serif;}
+.print-bar span{color:#fff !important;font-size:11px;display:block;margin-top:5px;font-family:Arial,sans-serif;}
+.print-spacer{height:70px;}
+@media print{.print-bar,.print-spacer{display:none !important;}}
 </style></head><body>
+<div class="print-bar">
+<button onclick="window.print()">📄 Télécharger / Imprimer en PDF</button>
+<span>Choisissez « Enregistrer au format PDF » dans les options d'impression</span>
+</div>
+<div class="print-spacer"></div>
 <div class="header">
 <div class="logo">✦ BRITON SCIENCE</div>
 <div class="sub">Plateforme Éducative — Côte d'Ivoire</div>
@@ -1566,34 +1613,26 @@ const supMap={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶'
 const subMap={'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','n':'ₙ','i':'ᵢ','x':'ₓ','a':'ₐ'};
 function toSup(t){return t.split('').map(c=>supMap[c]||c).join('');}
 function toSub(t){return t.split('').map(c=>subMap[c]||c).join('');}
-// Traiter chaque formule entre $...$ ou $$...$$
-return s.replace(/\$\$([\s\S]*?)\$\$|\$([^\$\n]*?)\$/g,(m,a,b)=>{
-let f=a||b||'';
-// Commandes courantes
+// Convertit une chaîne LaTeX en Unicode lisible
+function convLatex(f){
 f=f.replace(/\\displaystyle/g,'');
 f=f.replace(/\\boxed\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g,'[ $1 ]');
 f=f.replace(/\\left\(/g,'(').replace(/\\right\)/g,')').replace(/\\left\[/g,'[').replace(/\\right\]/g,']').replace(/\\left/g,'').replace(/\\right/g,'');
-f=f.replace(/\\dfrac\{([^{}]+)\}\{([^{}]+)\}/g,'($1)/($2)');
-f=f.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g,'($1)/($2)');
-f=f.replace(/\\sqrt\{([^{}]+)\}/g,'√($1)');
+// Fractions (gérer les imbrications simples en répétant)
+for(let k=0;k<3;k++){f=f.replace(/\\d?frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g,'($1)/($2)');}
+f=f.replace(/\\sqrt\s*\{([^{}]+)\}/g,'√($1)');
 f=f.replace(/\\int_\{([^{}]*)\}\^\{([^{}]*)\}/g,(mm,lo,hi)=>'∫'+(lo?toSub(lo):'')+(hi?toSup(hi):''));
 f=f.replace(/\\int/g,'∫');
 f=f.replace(/\\sum_\{([^{}]*)\}\^\{([^{}]*)\}/g,(mm,lo,hi)=>'Σ'+(lo?toSub(lo):'')+(hi?toSup(hi):''));
 f=f.replace(/\\sum/g,'Σ');
-// Limites : gérer \lim\limits_{x \to +\infty} AVANT de traiter les indices et symboles
-f=f.replace(/\\lim\s*\\limits\s*_\{([^{}]*)\}/g,(mm,sub)=>{
-let s=sub.replace(/\\to/g,'→').replace(/\\rightarrow/g,'→').replace(/\\infty/g,'∞').replace(/\\,/g,'').replace(/\s+/g,'');
-return 'lim('+s+') ';
-});
-f=f.replace(/\\lim\s*_\{([^{}]*)\}/g,(mm,sub)=>{
-let s=sub.replace(/\\to/g,'→').replace(/\\rightarrow/g,'→').replace(/\\infty/g,'∞').replace(/\\,/g,'').replace(/\s+/g,'');
-return 'lim('+s+') ';
-});
+// Limites : gérer \lim\limits_{x \to +\infty} AVANT les indices
+f=f.replace(/\\lim\s*\\limits\s*_\{([^{}]*)\}/g,(mm,sub)=>{let s=sub.replace(/\\to/g,'→').replace(/\\rightarrow/g,'→').replace(/\\infty/g,'∞').replace(/\\,/g,'').replace(/\s+/g,'');return 'lim('+s+') ';});
+f=f.replace(/\\lim\s*_\{([^{}]*)\}/g,(mm,sub)=>{let s=sub.replace(/\\to/g,'→').replace(/\\rightarrow/g,'→').replace(/\\infty/g,'∞').replace(/\\,/g,'').replace(/\s+/g,'');return 'lim('+s+') ';});
+f=f.replace(/\\lim/g,'lim');
 f=f.replace(/\\limits/g,'');
-// Exposants ^{...} et ^x
+// Exposants et indices
 f=f.replace(/\^\{([^{}]+)\}/g,(mm,e)=>toSup(e));
 f=f.replace(/\^(\w)/g,(mm,e)=>toSup(e));
-// Indices _{...} et _x
 f=f.replace(/_\{([^{}]+)\}/g,(mm,e)=>toSub(e));
 f=f.replace(/_(\w)/g,(mm,e)=>toSub(e));
 // Symboles
@@ -1602,17 +1641,29 @@ f=f.replace(/\\leq/g,'≤').replace(/\\geq/g,'≥').replace(/\\neq/g,'≠').repl
 f=f.replace(/\\infty/g,'∞').replace(/\\partial/g,'∂').replace(/\\nabla/g,'∇');
 f=f.replace(/\\pi/g,'π').replace(/\\theta/g,'θ').replace(/\\alpha/g,'α').replace(/\\beta/g,'β').replace(/\\gamma/g,'γ').replace(/\\delta/g,'δ').replace(/\\lambda/g,'λ').replace(/\\mu/g,'μ').replace(/\\omega/g,'ω').replace(/\\sigma/g,'σ').replace(/\\phi/g,'φ').replace(/\\rho/g,'ρ');
 f=f.replace(/\\Delta/g,'Δ').replace(/\\Omega/g,'Ω').replace(/\\Sigma/g,'Σ');
-f=f.replace(/\\in/g,'∈').replace(/\\notin/g,'∉').replace(/\\subset/g,'⊂').replace(/\\cup/g,'∪').replace(/\\cap/g,'∩').replace(/\\forall/g,'∀').replace(/\\exists/g,'∃');
-f=f.replace(/\\rightarrow/g,'→').replace(/\\to/g,'→').replace(/\\Rightarrow/g,'⇒').replace(/\\leftarrow/g,'←').replace(/\\Leftrightarrow/g,'⇔');
+f=f.replace(/\\in\b/g,'∈').replace(/\\notin/g,'∉').replace(/\\subset/g,'⊂').replace(/\\cup/g,'∪').replace(/\\cap/g,'∩').replace(/\\forall/g,'∀').replace(/\\exists/g,'∃');
+f=f.replace(/\\rightarrow/g,'→').replace(/\\to\b/g,'→').replace(/\\Rightarrow/g,'⇒').replace(/\\leftarrow/g,'←').replace(/\\Leftrightarrow/g,'⇔');
 f=f.replace(/\\mathbb\{R\}/g,'ℝ').replace(/\\mathbb\{N\}/g,'ℕ').replace(/\\mathbb\{Z\}/g,'ℤ').replace(/\\mathbb\{Q\}/g,'ℚ').replace(/\\mathbb\{C\}/g,'ℂ');
 f=f.replace(/\\sin/g,'sin').replace(/\\cos/g,'cos').replace(/\\tan/g,'tan').replace(/\\ln/g,'ln').replace(/\\log/g,'log').replace(/\\exp/g,'exp');
 f=f.replace(/\\overline\{([^{}]+)\}/g,'$1̄');
-f=f.replace(/\\,/g,' ').replace(/\\;/g,' ').replace(/\\quad/g,'  ').replace(/\\!/g,'');
+f=f.replace(/\\,/g,' ').replace(/\\;/g,' ').replace(/\\quad/g,'  ').replace(/\\qquad/g,'   ').replace(/\\!/g,'');
 f=f.replace(/\\text\{([^{}]*)\}/g,'$1');
 f=f.replace(/\\\\/g,' ');
-// Nettoyer accolades et backslashes restants
-f=f.replace(/[{}]/g,'').replace(/\\/g,'');
-return f.trim();
+return f;
+}
+// Traite tout le texte : convertit les formules $...$ ET les commandes LaTeX qui traînent hors des $
+return s
+// 1) Formules délimitées par $...$ ou $$...$$
+.replace(/\$\$([\s\S]*?)\$\$|\$([^\$\n]*?)\$/g,(m,a,b)=>{let f=convLatex(a||b||'');return f.replace(/[{}]/g,'').replace(/\\/g,'').trim();})
+// 2) \boxed{...} hors $ (résultat encadré)
+.replace(/\\boxed\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g,(m,inner)=>'[ '+convLatex(inner).replace(/[{}\\]/g,'').trim()+' ]')
+.replace(/(^|\n|\s)boxed([A-Za-z0-9])/g,'$1$2')
+// 2bis) Limites avec bornes hors $ : \lim_{x \to +\infty} -> lim(x→+∞)
+.replace(/\\lim\s*(\\limits\s*)?_\{([^{}]*)\}/g,(m,_l,sub)=>{let z=sub.replace(/\\to\b/g,'→').replace(/\\rightarrow/g,'→').replace(/\\infty/g,'∞').replace(/\\,/g,'').replace(/\s+/g,'');return 'lim('+z+') ';})
+// 3) Commandes LaTeX résiduelles hors $ (\frac, \sqrt, \infty, etc.)
+.replace(/\\[a-zA-Z]+(\s*\{[^{}]*\}(\s*\{[^{}]*\})?)?|_\{[^{}]+\}|\^\{[^{}]+\}/g,(m)=>{
+const conv=convLatex(m);
+return conv.replace(/[{}]/g,'').replace(/\\/g,'');
 });
 }
 
