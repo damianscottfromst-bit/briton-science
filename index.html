@@ -1222,8 +1222,41 @@ svg+='<text x="'+px(i)+'" y="'+(yy+5)+'" text-anchor="middle" font-size="'+fs+'"
 // Définition de la flèche
 svg+='<defs><marker id="vararrow" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#1f6f3f"/></marker></defs>';
 svg+='</svg>';
-// Envelopper comme une figure (protégée + impression)
-return '<div style="margin:14px 0;overflow-x:auto;">'+svg+'</div>';
+// Encoder la spec pour permettre à l'export Word de reconstruire un VRAI tableau HTML (lu parfaitement par Word)
+let specB64='';try{specB64=btoa(unescape(encodeURIComponent(spec)));}catch(e){specB64='';}
+// Envelopper : SVG pour écran/PDF (beau) + spec encodée pour Word
+return '<div class="vartable" data-spec="'+specB64+'" style="margin:14px 0;overflow-x:auto;">'+svg+'</div>';
+}catch(e){return '';}
+}
+// Reconstruit un VRAI tableau HTML (3 lignes : x, signe, variation) à partir d'une spec [[VAR:]] — pour Word
+function varSpecToHtmlTable(spec){
+try{
+const sym=s=>(s||'').trim()
+.replace(/\\?searrow/gi,'↘').replace(/\\?nearrow/gi,'↗')
+.replace(/\+\s*inf(ini|ty)?/gi,'+∞').replace(/-\s*inf(ini|ty)?/gi,'−∞').replace(/\binf(ini|ty)?\b/gi,'∞')
+.replace(/\bracine\(([^)]+)\)/gi,'√($1)').replace(/\bsqrt\(([^)]+)\)/gi,'√($1)').replace(/\bpi\b/gi,'π');
+let rows=[];
+spec.split(/\n/).forEach(raw=>{
+const ln=raw.trim();if(!ln)return;
+const mm=ln.match(/^([^:]+):\s*(.*)$/);if(!mm)return;
+rows.push({label:mm[1].trim(),cells:mm[2].split('|').map(c=>sym(c))});
+});
+if(!rows.length)return '';
+const maxC=Math.max(...rows.map(r=>r.cells.length));
+const bd='border:1px solid #000;padding:6px 12px;text-align:center;';
+let html='<table style="border-collapse:collapse;margin:14px auto;font-family:\'Times New Roman\',serif;font-size:13pt;">';
+rows.forEach((r,ri)=>{
+html+='<tr>';
+html+='<td style="'+bd+'font-weight:bold;background:#f0e6c8;">'+(r.label||'')+'</td>';
+for(let i=0;i<maxC;i++){
+let c=r.cells[i]!==undefined?r.cells[i]:'';
+const isArrow=/[↗↘↑↓]/.test(c);
+html+='<td style="'+bd+(ri===0?'font-weight:bold;':'')+(isArrow?'font-size:16pt;color:#1f6f3f;':'')+'">'+(c||'&nbsp;')+'</td>';
+}
+html+='</tr>';
+});
+html+='</table>';
+return html;
 }catch(e){return '';}
 }
 // Convertit les tableaux LaTeX \begin{array}...\end{array} (tableaux de variation/signe) en vrais tableaux HTML
@@ -1302,7 +1335,9 @@ text=text.replace(/(^|\n)\s*boxed\s*/g,'$1');
 const svgs=[];
 // Protéger d'abord les blocs GeoGebra complets (conteneur interactif + SVG d'impression)
 text=text.replace(/<div class="ggb-wrap"[\s\S]*?<!--\/ggb-wrap-->/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
-// Protéger les tableaux de variation (div contenant un table) déjà convertis en HTML
+// Protéger les tableaux de variation (div.vartable contenant le SVG + la spec encodée)
+text=text.replace(/<div class="vartable"[\s\S]*?<\/svg><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
+// Protéger les anciens tableaux HTML éventuels
 text=text.replace(/<div style="margin:1[46]px 0;[^"]*"><table[\s\S]*?<\/table><\/div>/gi,m=>{svgs.push(m);return '\u0001'+(svgs.length-1)+'\u0001';});
 text=text.replace(/<svg[\s\S]*?<\/svg>/gi,m=>{
 // Rendre le SVG responsive et centré (uniquement s'il n'a pas déjà un style)
@@ -1442,24 +1477,19 @@ const s=c.subs.find(x=>x.id===S.sub);
 return s?(c.label+' '+s.label):c.label;
 }
 
-// Télécharger en PDF (via iframe caché — pas de "about:blank")
+// Télécharger en PDF — ouvre une fenêtre dédiée (fiable sur ordinateur ET téléphone)
 function downloadPDF(content,titre){
 const html=buildPrintHTML(content,titre);
-const iframe=document.createElement('iframe');
-iframe.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-document.body.appendChild(iframe);
-const doc=iframe.contentWindow.document;
-doc.open();
-doc.write(html);
-doc.close();
-// Attendre MathJax puis imprimer
-setTimeout(()=>{
-try{
-iframe.contentWindow.focus();
-iframe.contentWindow.print();
-}catch(e){alert('Erreur impression : '+e.message);}
-setTimeout(()=>{document.body.removeChild(iframe);},2000);
-},1800);
+// Ouvrir une nouvelle fenêtre/onglet : sur mobile, l'iframe caché imprime la page parente (fond sombre),
+// alors qu'une vraie fenêtre n'imprime QUE le document.
+const win=window.open('','_blank');
+if(!win){
+alert('Veuillez autoriser les fenêtres pop-up pour télécharger le PDF, puis réessayez.');
+return;
+}
+win.document.open();
+win.document.write(html);
+win.document.close();
 }
 
 // Construire le HTML d'impression (avec MathJax + en-tête Briton Science)
@@ -1476,7 +1506,15 @@ c=c.replace(/color:#f0f0f8;?/gi,'');
 c=c.replace(/color:#FFD700;?/gi,'color:#000;');
 // Retirer le style « carte » (ombre/coins arrondis/fond) des figures pour qu'elles s'intègrent à la page
 c=c.replace(/(<svg[^>]*?)style="[^"]*"/gi,'$1style="background:#fff;"');
-return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+// Rendre les bordures de tableaux Markdown bien visibles en noir (au lieu du gris/doré pâle du thème sombre)
+c=c.replace(/border:1px solid rgba\(255,215,0,0\.3\)/gi,'border:1px solid #000');
+c=c.replace(/border:1px solid rgba\(255,255,255,0\.12\)/gi,'border:1px solid #000');
+c=c.replace(/background:rgba\(255,215,0,0\.08\)/gi,'background:#f0e6c8');
+// Retirer le conteneur GeoGebra interactif (vide à l'impression), garder le SVG d'impression
+c=c.replace(/<div class="ggb-screen">[\s\S]*?<!--\/ggb-screen-->/gi,'');
+c=c.replace(/<div class="ggb-print"[^>]*>([\s\S]*?)<\/div><!--\/ggb-print-->/gi,'$1');
+c=c.replace(/<div class="ggb-wrap"[^>]*>/gi,'').replace(/<!--\/ggb-wrap-->/g,'');
+return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${titre}</title>
 <script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};<\/script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"><\/script>
@@ -1485,6 +1523,7 @@ return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
   margin:2cm 2cm 2.4cm 2cm;
   @bottom-center{content:counter(page);font-family:'Times New Roman',serif;font-size:10pt;color:#444;}
 }
+html,body{background:#fff !important;}
 *{color:#000 !important;}
 body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;max-width:800px;margin:0 auto;padding:20px;font-size:13pt;}
 .header{text-align:center;border-bottom:3px solid #B8860B;padding-bottom:16px;margin-bottom:24px;}
@@ -1615,138 +1654,69 @@ async function downloadWord(content,titre){
 const date=new Date().toLocaleDateString('fr-FR');
 // Convertir les formules LaTeX en Unicode lisible pour Word
 let contentWord=latexToUnicode(content);
-// Retirer les conteneurs GeoGebra interactifs (vides hors navigateur) en gardant le SVG d'impression
+// 1) Tableaux de variation : reconstruire un VRAI tableau HTML (Word lit parfaitement les tableaux)
+contentWord=contentWord.replace(/<div class="vartable" data-spec="([^"]*)"[\s\S]*?<\/svg><\/div>/gi,(m,b64)=>{
+try{const spec=decodeURIComponent(escape(atob(b64)));const tbl=varSpecToHtmlTable(spec);return tbl||'';}catch(e){return '';}
+});
+// 2) GeoGebra : retirer le conteneur interactif, garder le SVG d'impression (sera converti en image)
 contentWord=contentWord.replace(/<div class="ggb-screen">[\s\S]*?<!--\/ggb-screen-->/gi,'');
 contentWord=contentWord.replace(/<div class="ggb-print"[^>]*>([\s\S]*?)<\/div><!--\/ggb-print-->/gi,'$1');
 contentWord=contentWord.replace(/<div class="ggb-wrap"[^>]*>/gi,'').replace(/<!--\/ggb-wrap-->/g,'');
-// Convertir chaque figure/courbe/tableau SVG en image PNG.
-// Les images sont embarquées via MHTML (parties MIME séparées) — méthode fiable pour Word.
-const imageParts=[]; // {cid, b64}
+// 3) Courbes et schémas (SVG restants) : convertir en image PNG insérée en data-URI
 const svgMatches=contentWord.match(/<svg[\s\S]*?<\/svg>/gi)||[];
 for(let i=0;i<svgMatches.length;i++){
 let cleanSvg=svgMatches[i].replace(/style="[^"]*"/i,'style="background:#ffffff;"');
 const res=await svgToPng(cleanSvg,2);
 if(res&&res.png){
 let dispW=Math.round(res.w),dispH=Math.round(res.h);
-const maxW=460;
+const maxW=450;
 if(dispW>maxW){const r=maxW/dispW;dispW=maxW;dispH=Math.round(dispH*r);}
-// Extraire le base64 pur (sans l'en-tête data:)
-const b64=res.png.replace(/^data:image\/png;base64,/,'');
-const cid='image'+(i+1)+'.png';
-imageParts.push({cid:cid,b64:b64});
-// Word (MHTML) référence l'image par son Content-Location
-const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+cid+'" width="'+dispW+'" height="'+dispH+'" alt="figure"/></p>';
+const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+res.png+'" width="'+dispW+'" height="'+dispH+'"/></p>';
 contentWord=contentWord.replace(svgMatches[i],imgTag);
 }else{
-contentWord=contentWord.replace(svgMatches[i],'<p style="text-align:center;color:#888;">[Figure non disponible]</p>');
+contentWord=contentWord.replace(svgMatches[i],'<p style="text-align:center;color:#888;">[Schéma non disponible]</p>');
 }
 }
-// Réduire les traits horizontaux excessifs (enlever les <hr> et limiter les sauts de ligne)
+// Nettoyages
 contentWord=contentWord.replace(/<hr[^>]*>/g,'');
 contentWord=contentWord.replace(/(<br>\s*){3,}/g,'<br><br>');
-// Forcer texte noir + Times New Roman : retirer les couleurs claires du thème sombre
 contentWord=contentWord.replace(/color:#fff(f{0,3})?;?/gi,'');
 contentWord=contentWord.replace(/color:#d8d8ea;?/gi,'').replace(/color:#c0b8ff;?/gi,'').replace(/color:#f0f0f8;?/gi,'');
 contentWord=contentWord.replace(/color:#FFD700;?/gi,'color:#000;');
-// Filet de sécurité : supprimer tout résidu de code LaTeX brut que Word ne doit pas afficher
+// Rendre les bordures de tableaux Markdown visibles (noir) au lieu du doré/gris pâle
+contentWord=contentWord.replace(/border:1px solid rgba\(255,215,0,0\.3\)/gi,'border:1px solid #000');
+contentWord=contentWord.replace(/border:1px solid rgba\(255,255,255,0\.12\)/gi,'border:1px solid #000');
+contentWord=contentWord.replace(/background:rgba\(255,215,0,0\.08\)/gi,'background:#f0e6c8');
 contentWord=contentWord.replace(/\\?begin\s*\{?array\}?[\s\S]*?\\?end\s*\{?array\}?/gi,'');
 contentWord=contentWord.replace(/\\(searrow|nearrow|hline|displaystyle|limits|left|right|quad|qquad)/g,'');
-const htmlBody=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><title>${titre}</title>
-<style>
-@page Section1{
-  size:21cm 29.7cm;
-  margin:3cm 2cm 2.5cm 2cm;
-  mso-header-margin:1.2cm;
-  mso-footer-margin:1cm;
-  mso-header:h1;
-  mso-footer:f1;
-}
-div.Section1{page:Section1;}
-body{font-family:'Times New Roman',Times,serif;color:#000;line-height:1.7;font-size:12pt;}
-p.MsoHeader,p.MsoFooter{margin:0;}
-.bs-head-logo{font-size:22px;font-weight:bold;color:#8B6914;font-family:'Times New Roman',serif;letter-spacing:1px;}
-.bs-head-sub{font-size:9px;color:#666;letter-spacing:1px;}
-h1,h2,h3{font-family:'Times New Roman',serif;font-weight:bold;color:#000;}
-h1{font-size:17pt;}h2{font-size:14pt;}h3{font-size:13pt;}
-strong,b{font-weight:bold;color:#000;}
-em{font-style:italic;color:#000;}
-table{border-collapse:collapse;width:100%;margin:12px 0;}
-th{border:1px solid #000;padding:7px 10px;background:#f0e6c8;color:#000;font-weight:bold;text-align:left;}
-td{border:1px solid #555;padding:6px 10px;color:#000;}
-img{max-width:100%;}
-.doc-title{text-align:center;border-bottom:2px solid #B8860B;padding-bottom:8px;margin-bottom:18px;}
-</style>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotPromptForConvert/><w:DoNotShowRevisions/><w:UpdateFieldsOnOpen/></w:WordDocument></xml><![endif]-->
-</head><body>
-<div class="Section1">
-<div style="mso-element:header" id="h1">
-<p class="MsoHeader" style="text-align:center;">
-<span class="bs-head-logo">✦ BRITON SCIENCE</span><br>
-<span class="bs-head-sub">PLATEFORME ÉDUCATIVE — CÔTE D'IVOIRE</span>
-</p>
-</div>
-<div style="mso-element:footer" id="f1">
-<p class="MsoFooter" style="text-align:center;font-size:9px;color:#999;">
-Briton Science © 2026 — briton-science.pages.dev — Page <!--[if supportFields]><span style='mso-element:field-begin'></span>PAGE <span style='mso-element:field-separator'></span><![endif]--><span>1</span><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]--> / <!--[if supportFields]><span style='mso-element:field-begin'></span>NUMPAGES <span style='mso-element:field-separator'></span><![endif]--><span>1</span><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]-->
-</p>
-</div>
-${contentWord}
-</div>
-</body></html>`;
-
-let blob,ext;
-if(imageParts.length>0){
-// Construire un fichier MHTML (multipart) : Word lit les images embarquées de façon fiable
-const boundary='----=_BritonScience_'+Date.now();
-const base='file:///C:/briton-science.mht';
-let mht='MIME-Version: 1.0\r\n';
-mht+='Content-Type: multipart/related; boundary="'+boundary+'"; type="text/html"\r\n\r\n';
-// Partie HTML
-mht+='--'+boundary+'\r\n';
-mht+='Content-Type: text/html; charset="utf-8"\r\n';
-mht+='Content-Transfer-Encoding: quoted-printable\r\n';
-mht+='Content-Location: '+base+'\r\n\r\n';
-mht+=toQuotedPrintable(htmlBody)+'\r\n\r\n';
-// Parties images
-imageParts.forEach(p=>{
-mht+='--'+boundary+'\r\n';
-mht+='Content-Type: image/png\r\n';
-mht+='Content-Transfer-Encoding: base64\r\n';
-mht+='Content-Location: '+p.cid+'\r\n\r\n';
-// base64 en lignes de 76 caractères
-mht+=p.b64.replace(/(.{76})/g,'$1\r\n')+'\r\n\r\n';
-});
-mht+='--'+boundary+'--\r\n';
-blob=new Blob([mht],{type:'application/msword'});
-ext='.doc';
-}else{
-// Pas d'image : un simple .doc HTML suffit
-blob=new Blob(['\ufeff',htmlBody],{type:'application/msword'});
-ext='.doc';
-}
+const html='\ufeff<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><title>'+titre+'</title>'
++'<style>'
++'@page Section1{size:21cm 29.7cm;margin:3cm 2cm 2.5cm 2cm;mso-header-margin:1.2cm;mso-footer-margin:1cm;mso-header:h1;mso-footer:f1;}'
++'div.Section1{page:Section1;}'
++'body{font-family:\'Times New Roman\',Times,serif;color:#000;line-height:1.7;font-size:12pt;}'
++'p.MsoHeader,p.MsoFooter{margin:0;}'
++'.bs-head-logo{font-size:22px;font-weight:bold;color:#8B6914;font-family:\'Times New Roman\',serif;letter-spacing:1px;}'
++'.bs-head-sub{font-size:9px;color:#666;letter-spacing:1px;}'
++'h1,h2,h3{font-family:\'Times New Roman\',serif;font-weight:bold;color:#000;}'
++'h1{font-size:17pt;}h2{font-size:14pt;}h3{font-size:13pt;}'
++'strong,b{font-weight:bold;color:#000;}em{font-style:italic;color:#000;}'
++'table{border-collapse:collapse;margin:12px auto;}'
++'th{border:1px solid #000;padding:7px 10px;background:#f0e6c8;color:#000;font-weight:bold;text-align:center;}'
++'td{border:1px solid #000;padding:6px 10px;color:#000;}'
++'img{max-width:100%;}'
++'</style>'
++'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotPromptForConvert/><w:UpdateFieldsOnOpen/></w:WordDocument></xml><![endif]-->'
++'</head><body><div class="Section1">'
++'<div style="mso-element:header" id="h1"><p class="MsoHeader" style="text-align:center;"><span class="bs-head-logo">✦ BRITON SCIENCE</span><br><span class="bs-head-sub">PLATEFORME ÉDUCATIVE — CÔTE D\'IVOIRE</span></p></div>'
++'<div style="mso-element:footer" id="f1"><p class="MsoFooter" style="text-align:center;font-size:9px;color:#999;">Briton Science © 2026 — briton-science.pages.dev — Page <!--[if supportFields]><span style=\'mso-element:field-begin\'></span>PAGE <span style=\'mso-element:field-separator\'></span><![endif]--><span>1</span><!--[if supportFields]><span style=\'mso-element:field-end\'></span><![endif]--></p></div>'
++contentWord
++'</div></body></html>';
+const blob=new Blob([html],{type:'application/msword'});
 const url=URL.createObjectURL(blob);
 const a=document.createElement('a');
-a.href=url;a.download=titre.replace(/[^a-zA-Z0-9À-ÿ -]/g,'')+ext;
+a.href=url;a.download=titre.replace(/[^a-zA-Z0-9À-ÿ -]/g,'')+'.doc';
 document.body.appendChild(a);a.click();
 setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
-}
-// Encode une chaîne en quoted-printable (pour la partie HTML du MHTML)
-function toQuotedPrintable(str){
-// Encoder en UTF-8 puis échapper les octets non-ASCII et '='
-const utf8=unescape(encodeURIComponent(str));
-let out='';
-for(let i=0;i<utf8.length;i++){
-const c=utf8.charCodeAt(i);
-if(c===61){out+='=3D';} // '='
-else if(c===13||c===10){out+=utf8[i];} // CR/LF tels quels
-else if(c>=32&&c<=126){out+=utf8[i];}
-else{out+='='+c.toString(16).toUpperCase().padStart(2,'0');}
-}
-// Limiter les lignes à 76 caractères avec soft-breaks (=)
-return out.replace(/(.{1,73})(?=.)/g,function(m){
-// éviter de couper une séquence =XX
-return m;
-});
 }
 function buildHTML(){
 // Le rôle vient du compte connecté. On le mappe sur le comportement de l'app.
