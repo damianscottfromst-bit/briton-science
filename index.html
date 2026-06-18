@@ -1310,6 +1310,21 @@ let svg=m;
 if(!/<svg[^>]*\sstyle=/i.test(m)){
 svg=m.replace(/<svg/i,'<svg style="max-width:100%;height:auto;display:block;margin:16px auto;background:#fff;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"');
 }
+// Convertir les indices/exposants LaTeX que l'IA aurait mis DANS les étiquettes <text> du schéma (ex: V_{CE}, I_C, R_1)
+const subMapS={'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','c':'c','e':'e'};
+const supMapS={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','n':'ⁿ'};
+svg=svg.replace(/>([^<]*?)</g,(mm,txt)=>{
+if(!/[_^]/.test(txt))return mm;
+let t2=txt
+.replace(/\^\{([0-9+\-n]{1,4})\}/g,(x,g)=>g.split('').map(c=>supMapS[c]||c).join(''))
+.replace(/\^([0-9])/g,(x,d)=>supMapS[d]||d)
+.replace(/_\{([0-9+\-]{1,4})\}/g,(x,g)=>g.split('').map(c=>subMapS[c]||c).join(''))
+.replace(/_([0-9])/g,(x,d)=>subMapS[d]||d)
+.replace(/([A-Za-z])_\{([A-Za-z0-9]{1,5})\}/g,'$1$2')
+.replace(/([A-Za-z0-9])_([A-Za-z])(?![A-Za-z])/g,'$1$2')
+.replace(/_\{([^{}]{1,8})\}/g,'$1');
+return '>'+t2+'<';
+});
 svgs.push(svg);return '\u0001'+(svgs.length-1)+'\u0001';
 });
 // Nettoyer un SVG incomplet (balise ouvrante sans fermeture, coupé par la limite) + fragments de code SVG orphelins
@@ -1343,6 +1358,22 @@ text=text.replace(/\(\s*svg\s*\)/gi,'');
 // 1. Protéger les formules LaTeX ($...$ et $$...$$)
 const math=[];
 text=text.replace(/\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$/g,m=>{math.push(m);return '\u0000'+(math.length-1)+'\u0000';});
+// 1bis. Nettoyer les indices/exposants LaTeX qui traînent HORS des $...$ (fréquent en électronique : V_{CE}, I_C, R_1, x^2...)
+// À ce stade, les formules ($...$) et figures (SVG/tableaux) sont déjà protégées par des placeholders.
+{
+const supU={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','n':'ⁿ','i':'ⁱ'};
+const subU={'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋'};
+const toSupU=t=>t.split('').map(c=>supU[c]||c).join('');
+const toSubU=t=>t.split('').map(c=>subU[c]||c).join('');
+// Exposants numériques -> Unicode ; indices : on retire les accolades en gardant le texte
+text=text.replace(/\^\{([0-9+\-n]{1,4})\}/g,(m,g)=>toSupU(g));
+text=text.replace(/\^([0-9])/g,(m,d)=>toSupU(d));
+text=text.replace(/_\{([0-9+\-]{1,4})\}/g,(m,g)=>toSubU(g));
+text=text.replace(/_([0-9])(?![0-9])/g,(m,d)=>toSubU(d));
+text=text.replace(/([A-Za-z])_\{([A-Za-z0-9]{1,5})\}/g,'$1$2'); // V_{CE} -> VCE (lisible)
+text=text.replace(/_\{([^{}]{1,8})\}/g,'$1'); // autres indices : retirer les accolades
+text=text.replace(/([A-Za-z0-9])_([A-Za-z])(?![A-Za-z])/g,'$1$2'); // I_C -> IC, R_n -> Rn (indice d'une seule lettre)
+}
 // 2. Échapper le HTML
 text=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 // 3. Titres ## et ###
@@ -1588,19 +1619,23 @@ let contentWord=latexToUnicode(content);
 contentWord=contentWord.replace(/<div class="ggb-screen">[\s\S]*?<!--\/ggb-screen-->/gi,'');
 contentWord=contentWord.replace(/<div class="ggb-print"[^>]*>([\s\S]*?)<\/div><!--\/ggb-print-->/gi,'$1');
 contentWord=contentWord.replace(/<div class="ggb-wrap"[^>]*>/gi,'').replace(/<!--\/ggb-wrap-->/g,'');
-// Convertir chaque figure SVG en image PNG (Word ne lit pas le SVG inline)
+// Convertir chaque figure/courbe/tableau SVG en image PNG.
+// Les images sont embarquées via MHTML (parties MIME séparées) — méthode fiable pour Word.
+const imageParts=[]; // {cid, b64}
 const svgMatches=contentWord.match(/<svg[\s\S]*?<\/svg>/gi)||[];
 for(let i=0;i<svgMatches.length;i++){
-// Nettoyer le style « carte » (ombre, fond, coins arrondis) pour que la figure ne ressemble pas à une feuille collée
 let cleanSvg=svgMatches[i].replace(/style="[^"]*"/i,'style="background:#ffffff;"');
 const res=await svgToPng(cleanSvg,2);
 if(res&&res.png){
-// Dimensions d'affichage en pixels (limiter la largeur à ~440px pour tenir dans la page A4)
 let dispW=Math.round(res.w),dispH=Math.round(res.h);
-const maxW=440;
+const maxW=460;
 if(dispW>maxW){const r=maxW/dispW;dispW=maxW;dispH=Math.round(dispH*r);}
-// <img> avec dimensions explicites — Word lit les data-URI PNG quand width/height sont fixés en px
-const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+res.png+'" width="'+dispW+'" height="'+dispH+'" alt="figure" style="width:'+dispW+'px;height:'+dispH+'px;"/></p>';
+// Extraire le base64 pur (sans l'en-tête data:)
+const b64=res.png.replace(/^data:image\/png;base64,/,'');
+const cid='image'+(i+1)+'.png';
+imageParts.push({cid:cid,b64:b64});
+// Word (MHTML) référence l'image par son Content-Location
+const imgTag='<p style="text-align:center;margin:12px 0;"><img src="'+cid+'" width="'+dispW+'" height="'+dispH+'" alt="figure"/></p>';
 contentWord=contentWord.replace(svgMatches[i],imgTag);
 }else{
 contentWord=contentWord.replace(svgMatches[i],'<p style="text-align:center;color:#888;">[Figure non disponible]</p>');
@@ -1616,7 +1651,7 @@ contentWord=contentWord.replace(/color:#FFD700;?/gi,'color:#000;');
 // Filet de sécurité : supprimer tout résidu de code LaTeX brut que Word ne doit pas afficher
 contentWord=contentWord.replace(/\\?begin\s*\{?array\}?[\s\S]*?\\?end\s*\{?array\}?/gi,'');
 contentWord=contentWord.replace(/\\(searrow|nearrow|hline|displaystyle|limits|left|right|quad|qquad)/g,'');
-const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${titre}</title>
+const htmlBody=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><title>${titre}</title>
 <style>
 @page Section1{
   size:21cm 29.7cm;
@@ -1644,29 +1679,74 @@ img{max-width:100%;}
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotPromptForConvert/><w:DoNotShowRevisions/><w:UpdateFieldsOnOpen/></w:WordDocument></xml><![endif]-->
 </head><body>
 <div class="Section1">
-<!-- En-tête de page Word (zone protégée, double-clic requis pour éditer) -->
 <div style="mso-element:header" id="h1">
 <p class="MsoHeader" style="text-align:center;">
 <span class="bs-head-logo">✦ BRITON SCIENCE</span><br>
 <span class="bs-head-sub">PLATEFORME ÉDUCATIVE — CÔTE D'IVOIRE</span>
 </p>
 </div>
-<!-- Pied de page Word (zone protégée) avec numéro de page -->
 <div style="mso-element:footer" id="f1">
 <p class="MsoFooter" style="text-align:center;font-size:9px;color:#999;">
 Briton Science © 2026 — briton-science.pages.dev — Page <!--[if supportFields]><span style='mso-element:field-begin'></span>PAGE <span style='mso-element:field-separator'></span><![endif]--><span>1</span><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]--> / <!--[if supportFields]><span style='mso-element:field-begin'></span>NUMPAGES <span style='mso-element:field-separator'></span><![endif]--><span>1</span><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]-->
 </p>
 </div>
-<!-- Corps du document (modifiable) -->
 ${contentWord}
 </div>
 </body></html>`;
-const blob=new Blob(['\ufeff',html],{type:'application/msword'});
+
+let blob,ext;
+if(imageParts.length>0){
+// Construire un fichier MHTML (multipart) : Word lit les images embarquées de façon fiable
+const boundary='----=_BritonScience_'+Date.now();
+const base='file:///C:/briton-science.mht';
+let mht='MIME-Version: 1.0\r\n';
+mht+='Content-Type: multipart/related; boundary="'+boundary+'"; type="text/html"\r\n\r\n';
+// Partie HTML
+mht+='--'+boundary+'\r\n';
+mht+='Content-Type: text/html; charset="utf-8"\r\n';
+mht+='Content-Transfer-Encoding: quoted-printable\r\n';
+mht+='Content-Location: '+base+'\r\n\r\n';
+mht+=toQuotedPrintable(htmlBody)+'\r\n\r\n';
+// Parties images
+imageParts.forEach(p=>{
+mht+='--'+boundary+'\r\n';
+mht+='Content-Type: image/png\r\n';
+mht+='Content-Transfer-Encoding: base64\r\n';
+mht+='Content-Location: '+p.cid+'\r\n\r\n';
+// base64 en lignes de 76 caractères
+mht+=p.b64.replace(/(.{76})/g,'$1\r\n')+'\r\n\r\n';
+});
+mht+='--'+boundary+'--\r\n';
+blob=new Blob([mht],{type:'application/msword'});
+ext='.doc';
+}else{
+// Pas d'image : un simple .doc HTML suffit
+blob=new Blob(['\ufeff',htmlBody],{type:'application/msword'});
+ext='.doc';
+}
 const url=URL.createObjectURL(blob);
 const a=document.createElement('a');
-a.href=url;a.download=titre.replace(/[^a-zA-Z0-9À-ÿ -]/g,'')+'.doc';
+a.href=url;a.download=titre.replace(/[^a-zA-Z0-9À-ÿ -]/g,'')+ext;
 document.body.appendChild(a);a.click();
 setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+}
+// Encode une chaîne en quoted-printable (pour la partie HTML du MHTML)
+function toQuotedPrintable(str){
+// Encoder en UTF-8 puis échapper les octets non-ASCII et '='
+const utf8=unescape(encodeURIComponent(str));
+let out='';
+for(let i=0;i<utf8.length;i++){
+const c=utf8.charCodeAt(i);
+if(c===61){out+='=3D';} // '='
+else if(c===13||c===10){out+=utf8[i];} // CR/LF tels quels
+else if(c>=32&&c<=126){out+=utf8[i];}
+else{out+='='+c.toString(16).toUpperCase().padStart(2,'0');}
+}
+// Limiter les lignes à 76 caractères avec soft-breaks (=)
+return out.replace(/(.{1,73})(?=.)/g,function(m){
+// éviter de couper une séquence =XX
+return m;
+});
 }
 function buildHTML(){
 // Le rôle vient du compte connecté. On le mappe sur le comportement de l'app.
