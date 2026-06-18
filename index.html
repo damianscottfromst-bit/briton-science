@@ -1132,13 +1132,16 @@ xRow=xRow.filter((c,i)=>!(c===''&&(i===0||i===xRow.length-1)));
 const n=xRow.length; // nombre de valeurs remarquables (colonnes de bornes)
 if(n<2)return '';
 // Géométrie du tableau
-const mx=20; // marge horizontale pour ne pas couper les valeurs aux bords (ex +∞)
-const labelW=68, colW=Math.max(90,Math.min(140,Math.round(520/(n-1)))), W=labelW+colW*(n-1)+mx*2, rowH=44, signH=44, varH=88;
+const mx=14; // marge horizontale pour ne pas couper les valeurs aux bords (ex +∞)
+const labelW=60, colW=Math.max(86,Math.min(132,Math.round(520/(n-1)))), gap=26;
+// gap = espace entre la ligne de séparation du label et la première borne (évite le chevauchement)
+const contentW=colW*(n-1);
+const W=labelW+gap+contentW+mx*2, rowH=44, signH=44, varH=88;
 const H=rowH+ (signRow?signH:0) + varH;
 const fs=15;
 let svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="max-width:100%;height:auto;display:block;margin:14px auto;background:#fff;font-family:\'Times New Roman\',serif;">';
-// Position x de chaque borne (décalée de la marge gauche)
-const colX=i=>mx+labelW+colW*i;
+// Position x de chaque borne : commence APRÈS le label + un espace (gap)
+const colX=i=>mx+labelW+gap+colW*i;
 const yX=rowH/2; // ligne x
 const ySign=rowH+signH/2;
 const yVarTop=rowH+(signRow?signH:0)+14;
@@ -1551,6 +1554,19 @@ c=c.replace(/background:rgba\(255,215,0,0\.08\)/gi,'background:#f0e6c8');
 c=c.replace(/<div class="ggb-screen">[\s\S]*?<!--\/ggb-screen-->/gi,'');
 c=c.replace(/<div class="ggb-print"[^>]*>([\s\S]*?)<\/div><!--\/ggb-print-->/gi,'$1');
 c=c.replace(/<div class="ggb-wrap"[^>]*>/gi,'').replace(/<!--\/ggb-wrap-->/g,'');
+// Récupérer les commandes LaTeX restées HORS des $...$ et les envelopper dans $...$ pour que MathJax les affiche
+// (ex: Df = \mathbb{R}, \frac{}{}, \lim, etc. écrits par l'IA sans délimiteurs)
+{
+const keep=[];
+const prot=m=>{keep.push(m);return '\u0002'+(keep.length-1)+'\u0002';};
+// Protéger : formules $...$, SVG, ET limites complètes \lim_{...} (enveloppées dès maintenant)
+c=c.replace(/\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$|<svg[\s\S]*?<\/svg>/gi,prot);
+c=c.replace(/\\lim\s*(?:\\limits)?\s*_\{[^{}]*\}/g,m=>prot('$'+m+'$'));
+// Envelopper les autres séquences de commandes LaTeX orphelines dans $...$
+c=c.replace(/(\\(?:mathbb|mathcal|mathbf|frac|dfrac|sqrt|sum|int|infty|leq|geq|neq|times|cdot|pm|in|forall|exists|alpha|beta|gamma|lambda|mu|pi|theta|sigma|omega|Delta|Omega|overline|vec)\b(?:\s*\{[^{}]*\}|\s*_\{[^{}]*\}|\s*\^\{[^{}]*\}|\s*_[a-zA-Z0-9]|\s*\^[a-zA-Z0-9])*)+/g,m=>'$'+m+'$');
+// Restaurer le contenu protégé
+c=c.replace(/\u0002(\d+)\u0002/g,(m,i)=>keep[+i]);
+}
 return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${titre}</title>
 <script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};<\/script>
