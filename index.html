@@ -2001,12 +2001,13 @@ const tabs=[t('tab0'),t('tab1'),t('tab2')];
 let visibleCycles=CYCLES;
 if(S.forceCycle==='superieur'){visibleCycles=CYCLES.filter(c=>c.id==='superieur');if(!S.cycle)S.cycle='superieur';}
 // Bouton retour : seulement pour l'admin (qui peut changer de rôle). Les autres voient un en-tête de rôle.
+const accessInfo = buildAccessBanner();
 const topBar = (window.CURRENT_ROLE==='admin')
 ? `<button class="back-btn" onclick="S.role=null;S.cycle=null;S.sub=null;render()">${t('back')}</button>`
-: `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+: `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
 <span style="font-size:11px;color:#8888aa;font-family:'Cinzel',serif;letter-spacing:1px;">${roleLabel()==='Professeur'?'🏫':isHigherStudent()?'🎓':'🎒'} ${roleLabel()}</span>
 <button class="back-btn" style="margin:0;" onclick="doLogout()">⏻ Déconnexion</button>
-</div>`;
+</div>${accessInfo}`;
 return `
 <div style="animation:fadeUp 0.4s ease both;">
 ${topBar}
@@ -2269,6 +2270,11 @@ if(ai)ai.addEventListener('input',e=>{S.studentAnswer=e.target.value;});
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 async function doGenerate(mode){
 if(S.loading)return;
+// Vérifier l'accès (sauf admin et enseignant) : bloquer si la fenêtre gratuite / Pro est expirée
+if(window.CURRENT_ROLE!=='admin' && window.CURRENT_ROLE!=='teacher' && window.CURRENT_PROFILE){
+  const acc = accessActive(window.CURRENT_PROFILE);
+  if(!acc || !acc.active){ showAccessExpired(); return; }
+}
 S.topic=document.getElementById('topic-input')?.value||S.topic;
 if(!S.cycle||!S.sub||!S.subject||!S.topic.trim())return;
 // mode = 'cours' ou 'exercice' (par défaut : exercice)
@@ -2669,6 +2675,40 @@ function accessActive(profile){
   return {active:false};
 }
 
+// Construit le bandeau d'état d'accès (temps gratuit restant ou statut Pro) affiché en haut de l'app
+function buildAccessBanner(){
+  // L'admin et les enseignants ne sont pas limités dans le temps
+  if(window.CURRENT_ROLE==='admin'||window.CURRENT_ROLE==='teacher') return '';
+  const p = window.CURRENT_PROFILE;
+  if(!p) return '';
+  const now = Date.now();
+  // Abonnement Pro actif
+  if(p.plan && p.plan!=='free' && p.plan_expires_at){
+    const ms = new Date(p.plan_expires_at).getTime()-now;
+    if(ms>0){
+      const days = Math.floor(ms/(24*3600*1000));
+      const hours = Math.floor((ms%(24*3600*1000))/(3600*1000));
+      const planNames={day:'Pass Jour',week:'Pass Semaine',month:'Pro Mensuel'};
+      const reste = days>0 ? days+' jour'+(days>1?'s':'')+' '+hours+'h' : hours+'h';
+      return '<div style="background:linear-gradient(135deg,rgba(46,196,182,0.15),rgba(46,196,182,0.05));border:1px solid rgba(46,196,182,0.35);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#7ef0e8;display:flex;align-items:center;gap:8px;">⭐ <b>'+(planNames[p.plan]||'Pro')+'</b> actif — '+reste+' restant'+(days>1?'s':'')+'</div>';
+    }
+  }
+  // Fenêtre gratuite 2h
+  if(p.temp_access_expires_at){
+    const ms = new Date(p.temp_access_expires_at).getTime()-now;
+    if(ms>0){
+      const totalMin = Math.floor(ms/60000);
+      const h = Math.floor(totalMin/60), m = totalMin%60;
+      const reste = h>0 ? h+'h'+(m<10?'0':'')+m : m+' min';
+      return '<div style="background:linear-gradient(135deg,rgba(255,215,0,0.13),rgba(255,215,0,0.04));border:1px solid rgba(255,215,0,0.3);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#FFD700;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
+        +'<span>🎁 Accès gratuit — <b>'+reste+'</b> restant</span>'
+        +'<button onclick="showAccessExpired()" style="background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a;border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;">Passer Pro</button>'
+        +'</div>';
+    }
+  }
+  return '';
+}
+
 // Mappe le rôle/niveau du profil vers le comportement de l'app
 function applyProfileToApp(profile){
   window.CURRENT_PROFILE = profile;
@@ -2790,12 +2830,19 @@ function regOnAge(){
   const cb=document.getElementById('reg-classBlock');
   const cs=document.getElementById('reg-classe');
   const cl=document.getElementById('reg-classLabel');
-  if(!age||age<3){ badge.innerHTML=''; cb.style.display='none'; return; }
-  let poss=regLevelsForAge(age);
-  if(regRole==='higher') poss=['superieur'];
+  if(!age||age<3){ badge.innerHTML=''; cb.style.display='none'; regLevel=''; return; }
   const badgeCss='display:inline-block;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;';
+  let poss=regLevelsForAge(age);
+  // Étudiant du supérieur : l'âge DOIT être 20 ans et plus
+  if(regRole==='higher'){
+    if(age<20){
+      badge.innerHTML='<span style="'+badgeCss+'background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.4);color:#ff9999;">⚠️ L\'enseignement supérieur est accessible à partir de 20 ans. Vérifiez votre âge ou choisissez « Élève ».</span>';
+      cb.style.display='none'; regLevel=''; return;
+    }
+    poss=['superieur'];
+  }
   if(poss.length===0){
-    badge.innerHTML='<span style="'+badgeCss+'background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.4);color:#ff9999;">Âge hors tranches scolaires</span>';
+    badge.innerHTML='<span style="'+badgeCss+'background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.4);color:#ff9999;">Âge hors tranches scolaires (4 à 10 ans primaire, 10-16 collège, 15-23 lycée, 20+ supérieur).</span>';
     cb.style.display='none'; regLevel=''; return;
   }
   if(poss.length===1){
@@ -2837,6 +2884,13 @@ async function doRegister(){
     if(!age){ showErr('Veuillez indiquer votre âge.'); return; }
     if(!regLevel){ showErr('Veuillez sélectionner votre classe exacte.'); return; }
     niveau=regLevel;
+    // Vérification de cohérence âge ↔ niveau (sécurité)
+    const validLevels=regLevelsForAge(age);
+    if(!validLevels.includes(niveau)){
+      const ranges={primaire:'4 à 10 ans',college:'10 à 16 ans',lycee:'15 à 23 ans',superieur:'20 ans et plus'};
+      showErr('Incohérence : le niveau '+(REG_LEVEL_LABELS[niveau]||niveau)+' correspond à '+(ranges[niveau]||'')+'. Vérifiez votre âge ('+age+' ans) et votre classe.');
+      return;
+    }
     role = (regRole==='higher'||niveau==='superieur') ? 'university' : 'student';
   }
   if(!supa){ showErr('Service indisponible, réessayez dans un instant.'); return; }
