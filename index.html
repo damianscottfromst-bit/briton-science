@@ -2026,7 +2026,10 @@ if(S.forceCycle==='superieur'){visibleCycles=CYCLES.filter(c=>c.id==='superieur'
 // Bouton retour : seulement pour l'admin (qui peut changer de rôle). Les autres voient un en-tête de rôle.
 const accessInfo = buildAccessBanner();
 const topBar = (window.CURRENT_ROLE==='admin')
-? `<button class="back-btn" onclick="S.role=null;S.cycle=null;S.sub=null;render()">${t('back')}</button>`
+? `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+<button class="back-btn" style="margin:0;" onclick="S.role=null;S.cycle=null;S.sub=null;render()">${t('back')}</button>
+<button onclick="adminTestPayment()" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.35);color:#FFD700;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;">🧪 Tester le paiement Wave</button>
+</div>`
 : `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
 <span style="font-size:11px;color:#8888aa;font-family:'Cinzel',serif;letter-spacing:1px;">${roleLabel()==='Professeur'?'🏫':isHigherStudent()?'🎓':'🎒'} ${roleLabel()}</span>
 <button class="back-btn" style="margin:0;" onclick="doLogout()">⏻ Déconnexion</button>
@@ -3016,8 +3019,15 @@ async function doRegister(){
 }
 
 // ===== ACCÈS EXPIRÉ / PASSAGE PRO =====
-function showAccessExpired(){
+// Bouton de test (admin uniquement) : prévisualise tout le parcours de paiement Wave sans attendre 2h
+function adminTestPayment(){
+  if(window.CURRENT_ROLE!=='admin'){ return; }
+  // Afficher l'écran "accès expiré" exactement comme le verra un élève après ses 2h
+  showAccessExpired(true);
+}
+function showAccessExpired(isTest){
   // Affiche un écran proposant les formules Pro Wave quand l'accès gratuit (2h) ou Pro est expiré
+  window.WAVE_TEST_MODE = !!isTest;
   let ov=document.getElementById('access-expired-overlay');
   if(!ov){
     ov=document.createElement('div');
@@ -3025,9 +3035,14 @@ function showAccessExpired(){
     ov.style.cssText='position:fixed;inset:0;z-index:99998;background:linear-gradient(135deg,#07071a,#0c0c22 60%,#07071a);display:flex;align-items:center;justify-content:center;font-family:DM Sans,sans-serif;padding:20px;overflow-y:auto;';
     document.body.appendChild(ov);
   }
+  const testBadge = isTest ? '<div style="background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.5);border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:11px;color:#FFD700;font-weight:700;">🧪 MODE TEST (admin) — aperçu du parcours, aucun paiement réel ne sera enregistré</div>' : '';
+  const closeBtn = isTest
+    ? '<button onclick="document.getElementById(\'access-expired-overlay\').style.display=\'none\'" style="width:100%;padding:12px;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;margin-top:10px;background:transparent;color:#999;font-size:12px;cursor:pointer;">Fermer le test</button>'
+    : '<button onclick="doLogout()" style="width:100%;padding:12px;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;margin-top:10px;background:transparent;color:#999;font-size:12px;cursor:pointer;">Se déconnecter</button>';
   ov.innerHTML='<div style="width:100%;max-width:430px;margin:auto;background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.25);border-radius:18px;padding:34px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.6);text-align:center;">'
+    +testBadge
     +'<div style="font-size:42px;margin-bottom:10px;">⏳</div>'
-    +'<div style="font-family:Cinzel,serif;font-size:19px;font-weight:700;color:#FFD700;margin-bottom:8px;">Votre accès gratuit est terminé</div>'
+    +'<div style="font-family:Cinzel,serif;font-size:19px;font-weight:700;color:#FFD700;margin-bottom:8px;">'+(isTest?'Aperçu : accès gratuit terminé':'Votre accès gratuit est terminé')+'</div>'
     +'<div style="font-size:13px;color:#bbb;line-height:1.6;margin-bottom:20px;">Vous avez profité de vos 2 heures gratuites. Pour continuer à générer des cours et exercices en illimité, choisissez une formule Pro :</div>'
     +'<div style="background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.2);border-radius:12px;padding:8px 16px;text-align:left;">'
     +planRow('⏱️','Pass Jour','24 heures','200 FCFA','day')
@@ -3035,7 +3050,7 @@ function showAccessExpired(){
     +planRow('⭐','Pro Mensuel','30 jours','1 500 FCFA','month')
     +'</div>'
     +'<button onclick="startWavePayment()" style="width:100%;padding:14px;border:none;border-radius:10px;margin-top:18px;background:linear-gradient(135deg,#1DC3A6,#19E89C);color:#04231c;font-family:Cinzel,serif;font-weight:700;font-size:13px;letter-spacing:1px;cursor:pointer;">💳 Passer Pro avec Wave</button>'
-    +'<button onclick="doLogout()" style="width:100%;padding:12px;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;margin-top:10px;background:transparent;color:#999;font-size:12px;cursor:pointer;">Se déconnecter</button>'
+    +closeBtn
     +'<div style="font-size:10px;color:#666;margin-top:16px;">Paiement sécurisé · Activation immédiate après confirmation</div>'
     +'</div>';
   ov.style.display='flex';
@@ -3055,9 +3070,9 @@ function selectPlan(el,code){
 // ===== PAIEMENT WAVE (liens de paiement) =====
 // Vous créez 3 liens de paiement dans votre application Wave (un par formule) et les collez ici.
 const WAVE_LINKS = {
-  day:   'https://pay.wave.com/m/VOTRE_LIEN_JOUR/c/ci/',     // 200 FCFA
-  week:  'https://pay.wave.com/m/VOTRE_LIEN_SEMAINE/c/ci/',  // 500 FCFA
-  month: 'https://pay.wave.com/m/VOTRE_LIEN_MOIS/c/ci/'      // 1500 FCFA
+  day:   'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/?amount=200',
+  week:  'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/?amount=500',
+  month: 'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/?amount=1500'
 };
 const WAVE_NUMBER = '+225 0700000000'; // Votre numéro Wave (paiement manuel de secours)
 
@@ -3107,6 +3122,17 @@ async function submitWavePayment(){
   const amounts={day:200,week:500,month:1500};
   const durations={day:24,week:168,month:720}; // heures
   if(txid.length<4){ if(msg){msg.style.color='#ff9999';msg.textContent='Veuillez saisir un identifiant de transaction valide.';} return; }
+  // MODE TEST (admin) : ne rien enregistrer, juste confirmer que le parcours fonctionne
+  if(window.WAVE_TEST_MODE){
+    if(msg){ msg.style.color='#19E89C'; msg.textContent='✅ Test réussi !'; }
+    setTimeout(()=>{
+      const ov=document.getElementById('wave-pay-overlay'); if(ov) ov.style.display='none';
+      const ex=document.getElementById('access-expired-overlay'); if(ex) ex.style.display='none';
+      window.WAVE_TEST_MODE=false;
+      alert('✅ TEST RÉUSSI !\n\nLe parcours de paiement Wave fonctionne parfaitement :\n• Choix de la formule ✓\n• Redirection Wave ✓\n• Confirmation ✓\n\nEn réel, l\'élève aurait son accès Pro activé ici. Aucune donnée de test n\'a été enregistrée.');
+    },700);
+    return;
+  }
   if(!supa || !window.CURRENT_PROFILE){ if(msg){msg.textContent='Service indisponible, réessayez.';} return; }
   if(msg){ msg.style.color='#FFD700'; msg.textContent='⏳ Enregistrement…'; }
   try{
