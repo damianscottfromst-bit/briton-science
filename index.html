@@ -281,10 +281,10 @@ devtoolsOpen = false;
         </select>
         <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Numéro de la pièce</label>
         <input id="reg-idNum" type="text" placeholder="Numéro" style="width:100%;padding:12px 14px;border-radius:9px;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,215,0,0.15);color:#f0f0f8;font-size:14px;outline:none;">
-        <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin:12px 0 6px;">Photo de votre pièce (recto)</label>
-        <input id="reg-idPhoto" type="file" accept="image/*" onchange="regPhotoSelected()" style="width:100%;padding:10px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#ffffff;font-size:12px;outline:none;">
+        <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin:12px 0 6px;">Pièce justificative (photo ou PDF)</label>
+        <input id="reg-idPhoto" type="file" accept="image/*,application/pdf,.pdf" onchange="regPhotoSelected()" style="width:100%;padding:10px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#ffffff;font-size:12px;outline:none;">
         <div id="reg-photo-preview" style="display:none;margin-top:10px;text-align:center;"></div>
-        <div style="font-size:11px;color:#7ec8ff;margin-top:10px;line-height:1.5;background:rgba(90,170,255,0.1);border:1px solid rgba(90,170,255,0.25);border-radius:8px;padding:9px 12px;">📸 Prenez une photo nette de votre pièce. Vous aurez un accès immédiat. Votre pièce sera vérifiée par l'administration ; tout document non conforme entraînera la suspension du compte.</div>
+        <div style="font-size:11px;color:#7ec8ff;margin-top:10px;line-height:1.5;background:rgba(90,170,255,0.1);border:1px solid rgba(90,170,255,0.25);border-radius:8px;padding:9px 12px;">📸 Ajoutez une photo nette ou un PDF de votre pièce. Vous aurez un accès immédiat. Votre pièce sera vérifiée par l'administration ; tout document non conforme entraînera la suspension du compte.</div>
       </div>
 
       <div id="reg-error" style="display:none;margin-top:14px;padding:10px 14px;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:8px;font-size:12px;color:#ff8888;text-align:center;"></div>
@@ -2892,16 +2892,23 @@ function regPhotoSelected(){
   if(!f){ regPhotoFile=null; prev.style.display='none'; return; }
   // Vérifier la taille (max 5 Mo)
   if(f.size > 5*1024*1024){
-    alert('La photo est trop volumineuse (max 5 Mo). Prenez une photo de qualité normale.');
+    alert('Le fichier est trop volumineux (max 5 Mo). Réduisez la taille de la photo ou du PDF.');
     input.value=''; regPhotoFile=null; prev.style.display='none'; return;
   }
+  const isPdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name);
   regPhotoFile = f;
-  const reader = new FileReader();
-  reader.onload = e=>{
-    prev.innerHTML = '<img src="'+e.target.result+'" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);"><div style="font-size:10px;color:#7ec8ff;margin-top:4px;">✓ Photo ajoutée</div>';
+  if(isPdf){
+    // Un PDF ne peut pas s'afficher comme image : montrer une confirmation
+    prev.innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:8px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);"><span style="font-size:22px;">📄</span><span style="font-size:12px;color:#f0f0f8;">'+f.name+'</span></div><div style="font-size:10px;color:#7ec8ff;margin-top:4px;">✓ PDF ajouté</div>';
     prev.style.display='block';
-  };
-  reader.readAsDataURL(f);
+  } else {
+    const reader = new FileReader();
+    reader.onload = e=>{
+      prev.innerHTML = '<img src="'+e.target.result+'" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);"><div style="font-size:10px;color:#7ec8ff;margin-top:4px;">✓ Photo ajoutée</div>';
+      prev.style.display='block';
+    };
+    reader.readAsDataURL(f);
+  }
 }
 function regSetRole(role){
   regRole=role;
@@ -2987,7 +2994,7 @@ async function doRegister(){
     idType=document.getElementById('reg-idType')?.value||'';
     idNum=(document.getElementById('reg-idNum')?.value||'').trim();
     if(!idType||!idNum){ showErr('Veuillez indiquer votre pièce justificative et son numéro.'); return; }
-    if(!regPhotoFile){ showErr('Veuillez ajouter une photo de votre pièce justificative.'); return; }
+    if(!regPhotoFile){ showErr('Veuillez ajouter une photo ou un PDF de votre pièce justificative.'); return; }
   } else {
     age=parseInt(document.getElementById('reg-age')?.value);
     if(!age){ showErr('Veuillez indiquer votre âge.'); return; }
