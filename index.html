@@ -42,8 +42,8 @@ window.MathJax={
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ===== Configuration Supabase (base de données + authentification) =====
-const SUPABASE_URL = 'https://vqriepgugowbgyrvfhwc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxcmllcGd1Z293Ymd5cnZmaHdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyOTA5NDIsImV4cCI6MjA5Njg2Njk0Mn0.7d9DAOe0fqdKOPXTiUS2JC5FYhj2PGzM6ZauXBTw5q0';
+const SUPABASE_URL = 'https://lkjijcjogbrzduihewjo.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxramlqY2pvZ2JyemR1aWhld2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxODgzNDYsImV4cCI6MjA5ODc2NDM0Nn0.s70kFo3ppI4zI1ezns1SLdILoIHK-0TWM40pImmgp1Q';
 let supa = null;
 function initSupabase(){
   try{
@@ -262,6 +262,15 @@ devtoolsOpen = false;
       </div>
 
       <div id="reg-teacherBlock" style="display:none;margin-top:14px;">
+        <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Niveau où vous enseignez</label>
+        <select id="reg-teachLevel" onchange="regTeachLevelChanged()" style="width:100%;padding:12px 14px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#ffffff;font-size:14px;outline:none;margin-bottom:12px;">
+          <option value="">— Choisir votre niveau d'enseignement —</option>
+          <option value="primaire">Instituteur (Primaire) — 3 000 FCFA/mois</option>
+          <option value="college_lycee">Professeur (Collège / Lycée) — 5 000 FCFA/mois</option>
+          <option value="grande_ecole">Professeur (Supérieur / Grande École) — 7 500 FCFA/mois</option>
+          <option value="universite">Professeur (Supérieur / Université) — 10 000 FCFA/mois</option>
+        </select>
+        <div id="reg-teachPriceInfo" style="display:none;font-size:11px;color:#add4ff;background:rgba(90,170,255,0.1);border:1px solid rgba(90,170,255,0.3);border-radius:8px;padding:9px 12px;margin-bottom:12px;line-height:1.5;"></div>
         <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Pièce justificative</label>
         <select id="reg-idType" style="width:100%;padding:12px 14px;border-radius:9px;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,215,0,0.15);color:#f0f0f8;font-size:14px;outline:none;margin-bottom:12px;">
           <option value="">— Choisir —</option>
@@ -1970,7 +1979,13 @@ return buildMainApp();
 // Droits selon le rôle de connexion
 function canExportWord(){ return (window.CURRENT_ROLE==='admin'); }
 function isStudentRole(){ return ['student','university','grande_ecole'].includes(window.CURRENT_ROLE); }
-function isPupil(){ return window.CURRENT_ROLE==='student'; } // élève (collège/lycée) -> résumé seulement
+function isPupil(){ return window.CURRENT_ROLE==='student'; } // élève (primaire/collège/lycée)
+// Résumé adapté : UNIQUEMENT primaire et collège. Lycéens, étudiants et enseignants reçoivent le cours complet.
+function needsSummary(){
+  if(!isPupil()) return false;
+  const lvl=S.eduLevel||(window.CURRENT_PROFILE&&window.CURRENT_PROFILE.niveau)||'';
+  return lvl==='primaire'||lvl==='college';
+}
 function isHigherStudent(){ return ['university','grande_ecole'].includes(window.CURRENT_ROLE); } // étudiant -> cours complet
 function roleLabel(){
 const r=window.CURRENT_ROLE;
@@ -2149,13 +2164,13 @@ ${S.generated?`
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
 <div class="result-label" style="color:#6C63FF;">${S.genMode==='cours'?(isPupil()&&!S.showFullForPupil?'📝 Résumé du cours':(LANG==='en'?'📚 Generated lesson':'📚 Cours généré')):(LANG==='en'?'✦ Generated exercise':'✦ Exercice généré')}</div>
 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-<button onclick="downloadPDF(mdFormat(${isPupil()&&!S.showFullForPupil?'S.studentSummary||S.generated':'S.generated'}),getDocTitle(S.genMode==='cours'?'Cours':'Exercice'))" style="font-size:10px;color:#FF6B6B;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:6px;padding:4px 11px;cursor:pointer;">📄 PDF</button>
+<button onclick="downloadPDF(mdFormat(${needsSummary()&&!S.showFullForPupil?'S.studentSummary||S.generated':'S.generated'}),getDocTitle(S.genMode==='cours'?'Cours':'Exercice'))" style="font-size:10px;color:#FF6B6B;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:6px;padding:4px 11px;cursor:pointer;">📄 PDF</button>
 ${canExportWord()?`<button onclick="downloadWord(mdFormat(S.generated),getDocTitle(S.genMode==='cours'?'Cours':'Exercice'))" style="font-size:10px;color:#6C63FF;background:rgba(108,99,255,0.12);border:1px solid rgba(108,99,255,0.35);border-radius:6px;padding:4px 11px;cursor:pointer;">📝 Word</button>`:''}
 ${S.genMode!=='cours'?`<button onclick="S.exerciseForCorrect=S.generated;S.tab=1;render()" style="font-size:10px;color:#2EC4B6;background:rgba(46,196,182,0.1);border:1px solid rgba(46,196,182,0.3);border-radius:6px;padding:4px 11px;cursor:pointer;">${t('gen_send')}</button>`:''}
 </div>
 </div>
-<div class="result-content" style="font-size:14px;line-height:2;">${mdFormat(isPupil()&&S.genMode==='cours'&&!S.showFullForPupil?(S.studentSummary||S.generated):S.generated)}</div>
-${isPupil()&&S.genMode==='cours'&&S.studentSummary?`<div style="text-align:center;margin-top:12px;font-size:10px;color:#666;">📚 Ceci est un résumé adapté. Le cours complet est réservé aux enseignants et étudiants.</div>`:''}
+<div class="result-content" style="font-size:14px;line-height:2;">${mdFormat(needsSummary()&&S.genMode==='cours'&&!S.showFullForPupil?(S.studentSummary||S.generated):S.generated)}</div>
+${needsSummary()&&S.genMode==='cours'&&S.studentSummary?`<div style="text-align:center;margin-top:12px;font-size:10px;color:#666;">📚 Ceci est un résumé adapté. Le cours complet est réservé aux lycéens, étudiants et enseignants.</div>`:''}
 </div>`:''}
 </div>`;
 }
@@ -2296,8 +2311,8 @@ if(ai)ai.addEventListener('input',e=>{S.studentAnswer=e.target.value;});
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 async function doGenerate(mode){
 if(S.loading)return;
-// Vérifier l'accès (sauf admin et enseignant) : bloquer si la fenêtre gratuite / Pro est expirée
-if(window.CURRENT_ROLE!=='admin' && window.CURRENT_ROLE!=='teacher' && window.CURRENT_PROFILE){
+// Vérifier l'accès (sauf admin) : bloquer si la fenêtre gratuite / l'abonnement est expiré
+if(window.CURRENT_ROLE!=='admin' && window.CURRENT_PROFILE){
   const acc = accessActive(window.CURRENT_PROFILE);
   if(!acc || !acc.active){ showAccessExpired(); return; }
 }
@@ -2367,9 +2382,9 @@ const prompt=LANG==='en'
 :`Génère un exercice de ${subj.label} sur "${S.topic}" pour un élève de ${getLevelLabel()} en Côte d'Ivoire selon le programme ivoirien. 3 à 5 questions variées avec un barème.`);
 try{S.generated=await callClaude([{role:'user',content:prompt}],system,2,(needsFigure||needsCurve||needsCircuit)?7500:5000);}
 catch(e){console.error(e);S.generated=/504|timeout/i.test(e.message)?'⏳ La génération a pris trop de temps. Veuillez réessayer (sujet peut-être trop large — essayez un thème plus précis).':'❌ '+e.message;}
-// Pour un ÉLÈVE (collège/lycée), générer en plus un RÉSUMÉ du cours (le cours complet reste réservé aux profs/étudiants)
+// Pour un élève du PRIMAIRE ou du COLLÈGE, générer en plus un RÉSUMÉ (les lycéens, étudiants et profs voient le cours complet)
 S.studentSummary='';
-if(isPupil()&&mode==='cours'&&S.generated&&!S.generated.startsWith('❌')&&!S.generated.startsWith('⏳')){
+if(needsSummary()&&mode==='cours'&&S.generated&&!S.generated.startsWith('❌')&&!S.generated.startsWith('⏳')){
 try{
 const sumSys=`Tu es un professeur ivoirien. Réponds en ${LANG==='en'?'anglais':'français'}. On te donne un cours complet. Rédige un RÉSUMÉ clair et pédagogique pour un élève : les points essentiels à retenir, les définitions clés, les formules importantes et la méthode. Garde les blocs spéciaux [[VAR:...]], [[PLOT:...]] et les figures <svg>...</svg> si présents dans le cours (recopie-les tels quels car ils sont importants). Sois concis (l'essentiel), bien structuré avec des titres. Mets les formules entre $ ... $.`;
 S.studentSummary=await callClaude([{role:'user',content:'Voici le cours complet à résumer pour un élève :\n\n'+S.generated}],sumSys,2,3500);
@@ -2689,8 +2704,6 @@ function checkAdminSession(){
 // Détermine si l'accès est actif (Pro non expiré OU fenêtre gratuite 2h non expirée)
 function accessActive(profile){
   if(!profile) return false;
-  // Les enseignants ont un accès permanent (vérification manuelle de la pièce, pas de limite de temps)
-  if(profile.role==='teacher') return {active:true, type:'teacher'};
   const now = Date.now();
   // Abonnement Pro actif ?
   if(profile.plan && profile.plan!=='free' && profile.plan_expires_at){
@@ -2705,31 +2718,36 @@ function accessActive(profile){
 
 // Construit le bandeau d'état d'accès (temps gratuit restant ou statut Pro) affiché en haut de l'app
 function buildAccessBanner(){
-  // Enseignant : afficher le statut de vérification de la pièce
-  if(window.CURRENT_ROLE==='teacher'){
-    const p=window.CURRENT_PROFILE;
-    if(p && !p.teacher_verified){
-      return '<div style="background:linear-gradient(135deg,rgba(244,162,97,0.15),rgba(244,162,97,0.05));border:1px solid rgba(244,162,97,0.4);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#ffcb91;display:flex;align-items:center;gap:8px;">⏳ Pièce en cours de vérification — accès complet accordé. Tout document non conforme suspendra le compte.</div>';
-    }
-    if(p && p.teacher_verified){
-      return '<div style="background:linear-gradient(135deg,rgba(46,196,182,0.13),rgba(46,196,182,0.04));border:1px solid rgba(46,196,182,0.35);border-radius:10px;padding:8px 14px;margin-bottom:16px;font-size:12px;color:#7ef0e8;display:flex;align-items:center;gap:8px;">✓ Enseignant vérifié</div>';
-    }
-    return '';
-  }
   // L'admin n'est pas limité dans le temps
   if(window.CURRENT_ROLE==='admin') return '';
   const p = window.CURRENT_PROFILE;
   if(!p) return '';
+  let out='';
+  // Enseignant : statut de vérification de la pièce (en plus du statut d'abonnement)
+  if(window.CURRENT_ROLE==='teacher'){
+    if(!p.teacher_verified){
+      out+='<div style="background:linear-gradient(135deg,rgba(244,162,97,0.15),rgba(244,162,97,0.05));border:1px solid rgba(244,162,97,0.4);border-radius:10px;padding:8px 14px;margin-bottom:8px;font-size:12px;color:#ffcb91;display:flex;align-items:center;gap:8px;">⏳ Pièce en cours de vérification. Tout document non conforme suspendra le compte.</div>';
+    } else {
+      out+='<div style="background:linear-gradient(135deg,rgba(46,196,182,0.13),rgba(46,196,182,0.04));border:1px solid rgba(46,196,182,0.35);border-radius:10px;padding:7px 14px;margin-bottom:8px;font-size:12px;color:#7ef0e8;display:flex;align-items:center;gap:8px;">✓ Enseignant vérifié</div>';
+    }
+  }
   const now = Date.now();
-  // Abonnement Pro actif
+  // Abonnement actif
   if(p.plan && p.plan!=='free' && p.plan_expires_at){
     const ms = new Date(p.plan_expires_at).getTime()-now;
     if(ms>0){
       const days = Math.floor(ms/(24*3600*1000));
       const hours = Math.floor((ms%(24*3600*1000))/(3600*1000));
-      const planNames={day:'Pass Jour',week:'Pass Semaine',month:'Pro Mensuel'};
+      let planName;
+      if(window.CURRENT_ROLE==='teacher'){
+        const tp=TEACHER_PLANS[p.teacher_level];
+        planName='Abonnement '+(tp?tp.label:'Enseignant');
+      } else {
+        const planNames={day:'Pass Jour',week:'Pass Semaine',month:'Pro Mensuel'};
+        planName=planNames[p.plan]||'Pro';
+      }
       const reste = days>0 ? days+' jour'+(days>1?'s':'')+' '+hours+'h' : hours+'h';
-      return '<div style="background:linear-gradient(135deg,rgba(46,196,182,0.15),rgba(46,196,182,0.05));border:1px solid rgba(46,196,182,0.35);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#7ef0e8;display:flex;align-items:center;gap:8px;">⭐ <b>'+(planNames[p.plan]||'Pro')+'</b> actif — '+reste+' restant'+(days>1?'s':'')+'</div>';
+      return out+'<div style="background:linear-gradient(135deg,rgba(46,196,182,0.15),rgba(46,196,182,0.05));border:1px solid rgba(46,196,182,0.35);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#7ef0e8;display:flex;align-items:center;gap:8px;">⭐ <b>'+planName+'</b> actif — '+reste+' restant'+(days>1?'s':'')+'</div>';
     }
   }
   // Fenêtre gratuite 2h
@@ -2739,13 +2757,14 @@ function buildAccessBanner(){
       const totalMin = Math.floor(ms/60000);
       const h = Math.floor(totalMin/60), m = totalMin%60;
       const reste = h>0 ? h+'h'+(m<10?'0':'')+m : m+' min';
-      return '<div style="background:linear-gradient(135deg,rgba(255,215,0,0.13),rgba(255,215,0,0.04));border:1px solid rgba(255,215,0,0.3);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#FFD700;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
+      const btnLabel = window.CURRENT_ROLE==='teacher' ? 'M\'abonner' : 'Passer Pro';
+      return out+'<div style="background:linear-gradient(135deg,rgba(255,215,0,0.13),rgba(255,215,0,0.04));border:1px solid rgba(255,215,0,0.3);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#FFD700;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
         +'<span>🎁 Accès gratuit — <b>'+reste+'</b> restant</span>'
-        +'<button onclick="showAccessExpired()" style="background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a;border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;">Passer Pro</button>'
+        +'<button onclick="showAccessExpired()" style="background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a;border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;">'+btnLabel+'</button>'
         +'</div>';
     }
   }
-  return '';
+  return out;
 }
 
 // Mappe le rôle/niveau du profil vers le comportement de l'app
@@ -2824,6 +2843,26 @@ const REG_CLASSES = {
 const REG_LEVEL_LABELS = {primaire:'Primaire',college:'Collège',lycee:'Lycée',superieur:'Supérieur'};
 let regRole = 'student';
 let regLevel = '';
+// ===== TARIFS ENSEIGNANTS (abonnement mensuel selon le niveau enseigné) =====
+const TEACHER_PLANS = {
+  primaire:      {label:'Instituteur (Primaire)',                amount:3000},
+  college_lycee: {label:'Professeur (Collège / Lycée)',          amount:5000},
+  grande_ecole:  {label:'Professeur (Supérieur / Grande École)', amount:7500},
+  universite:    {label:'Professeur (Supérieur / Université)',   amount:10000}
+};
+let regTeachLevel = '';
+// Affiche le tarif correspondant au niveau d'enseignement choisi
+function regTeachLevelChanged(){
+  const sel=document.getElementById('reg-teachLevel');
+  const info=document.getElementById('reg-teachPriceInfo');
+  regTeachLevel = sel ? sel.value : '';
+  if(!info) return;
+  if(regTeachLevel && TEACHER_PLANS[regTeachLevel]){
+    const p=TEACHER_PLANS[regTeachLevel];
+    info.innerHTML='💼 Votre formule : <b>'+p.label+'</b> — <b>'+p.amount.toLocaleString('fr-FR')+' FCFA/mois</b>, après vos 2 heures gratuites de découverte.';
+    info.style.display='block';
+  } else { info.style.display='none'; }
+}
 
 function openRegister(){
   document.getElementById('login-overlay').style.display='none';
@@ -2944,6 +2983,7 @@ async function doRegister(){
   let age=null, niveau=null, idType=null, idNum=null, role='student';
   if(regRole==='teacher'){
     role='teacher';
+    if(!regTeachLevel){ showErr('Veuillez choisir le niveau où vous enseignez.'); return; }
     idType=document.getElementById('reg-idType')?.value||'';
     idNum=(document.getElementById('reg-idNum')?.value||'').trim();
     if(!idType||!idNum){ showErr('Veuillez indiquer votre pièce justificative et son numéro.'); return; }
@@ -2994,12 +3034,18 @@ async function doRegister(){
       id_type:idType, id_number:idNum,
       id_photo_path: idPhotoUrl,
       teacher_verified: false,
+      teacher_level: role==='teacher' ? regTeachLevel : null, // niveau enseigné (détermine le tarif)
       temp_access_expires_at: tempExpiry, // TOUS ont l'accès gratuit 2h immédiat (y compris l'enseignant)
       updated_at:new Date().toISOString()
     };
     if(uid){
       await new Promise(r=>setTimeout(r,600)); // laisser le trigger créer la ligne
-      await supa.from('profiles').update(profileData).eq('id', uid);
+      let {error:upErr} = await supa.from('profiles').update(profileData).eq('id', uid);
+      // Si la colonne teacher_level n'existe pas encore en base, réessayer sans elle (compatibilité)
+      if(upErr && /teacher_level/i.test(upErr.message||'')){
+        delete profileData.teacher_level;
+        await supa.from('profiles').update(profileData).eq('id', uid);
+      }
     }
     // 4) Charger le profil et entrer dans l'app
     if(uid){
@@ -3007,7 +3053,8 @@ async function doRegister(){
       if(prof){ applyProfileToApp(prof); }
     }
     if(role==='teacher'){
-      alert('✅ Votre compte enseignant est créé et activé !\n\nVous avez un accès immédiat. Votre pièce justificative sera vérifiée par l\'administration. ⚠️ Tout document non conforme entraînera la suspension du compte.');
+      const tp=TEACHER_PLANS[regTeachLevel]||{label:'Enseignant',amount:5000};
+      alert('✅ Votre compte enseignant est créé et activé !\n\n🎁 Vous bénéficiez de 2 heures gratuites de découverte.\n💼 Ensuite, votre formule '+tp.label+' est à '+tp.amount.toLocaleString('fr-FR')+' FCFA/mois (paiement Wave).\n\nVotre pièce justificative sera vérifiée par l\'administration. ⚠️ Tout document non conforme entraînera la suspension du compte.');
     }
     closeLoginOverlay();
     S.role=null;
@@ -3039,17 +3086,32 @@ function showAccessExpired(isTest){
   const closeBtn = isTest
     ? '<button onclick="document.getElementById(\'access-expired-overlay\').style.display=\'none\'" style="width:100%;padding:12px;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;margin-top:10px;background:transparent;color:#999;font-size:12px;cursor:pointer;">Fermer le test</button>'
     : '<button onclick="doLogout()" style="width:100%;padding:12px;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;margin-top:10px;background:transparent;color:#999;font-size:12px;cursor:pointer;">Se déconnecter</button>';
+  // Enseignant : une seule formule, celle de son niveau d'enseignement
+  const isTeacherPay = !isTest && window.CURRENT_ROLE==='teacher';
+  let introText, plansHtml, payBtnLabel;
+  if(isTeacherPay){
+    const tl=(window.CURRENT_PROFILE&&window.CURRENT_PROFILE.teacher_level)||'college_lycee';
+    const tp=TEACHER_PLANS[tl]||TEACHER_PLANS.college_lycee;
+    selectedPlan='month';
+    introText='Vous avez profité de vos 2 heures gratuites. Pour continuer à créer vos cours et exercices en illimité, souscrivez à votre abonnement enseignant :';
+    plansHtml=planRow('💼',tp.label,'30 jours · renouvelable',tp.amount.toLocaleString('fr-FR')+' FCFA','month');
+    payBtnLabel='💳 M\'abonner avec Wave';
+  } else {
+    introText='Vous avez profité de vos 2 heures gratuites. Pour continuer à générer des cours et exercices en illimité, choisissez une formule Pro :';
+    plansHtml=planRow('⏱️','Pass Jour','24 heures','200 FCFA','day')
+      +planRow('📅','Pass Semaine','7 jours','500 FCFA','week')
+      +planRow('⭐','Pro Mensuel','30 jours','1 500 FCFA','month');
+    payBtnLabel='💳 Passer Pro avec Wave';
+  }
   ov.innerHTML='<div style="width:100%;max-width:430px;margin:auto;background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.25);border-radius:18px;padding:34px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.6);text-align:center;">'
     +testBadge
     +'<div style="font-size:42px;margin-bottom:10px;">⏳</div>'
     +'<div style="font-family:Cinzel,serif;font-size:19px;font-weight:700;color:#FFD700;margin-bottom:8px;">'+(isTest?'Aperçu : accès gratuit terminé':'Votre accès gratuit est terminé')+'</div>'
-    +'<div style="font-size:13px;color:#bbb;line-height:1.6;margin-bottom:20px;">Vous avez profité de vos 2 heures gratuites. Pour continuer à générer des cours et exercices en illimité, choisissez une formule Pro :</div>'
+    +'<div style="font-size:13px;color:#bbb;line-height:1.6;margin-bottom:20px;">'+introText+'</div>'
     +'<div style="background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.2);border-radius:12px;padding:8px 16px;text-align:left;">'
-    +planRow('⏱️','Pass Jour','24 heures','200 FCFA','day')
-    +planRow('📅','Pass Semaine','7 jours','500 FCFA','week')
-    +planRow('⭐','Pro Mensuel','30 jours','1 500 FCFA','month')
+    +plansHtml
     +'</div>'
-    +'<button onclick="startWavePayment()" style="width:100%;padding:14px;border:none;border-radius:10px;margin-top:18px;background:linear-gradient(135deg,#1DC3A6,#19E89C);color:#04231c;font-family:Cinzel,serif;font-weight:700;font-size:13px;letter-spacing:1px;cursor:pointer;">💳 Passer Pro avec Wave</button>'
+    +'<button onclick="startWavePayment()" style="width:100%;padding:14px;border:none;border-radius:10px;margin-top:18px;background:linear-gradient(135deg,#1DC3A6,#19E89C);color:#04231c;font-family:Cinzel,serif;font-weight:700;font-size:13px;letter-spacing:1px;cursor:pointer;">'+payBtnLabel+'</button>'
     +closeBtn
     +'<div style="font-size:10px;color:#666;margin-top:16px;">Paiement sécurisé · Activation immédiate après confirmation</div>'
     +'</div>';
@@ -3068,26 +3130,42 @@ function selectPlan(el,code){
   el.style.border='1px solid rgba(255,215,0,0.4)';
 }
 // ===== PAIEMENT WAVE (liens de paiement) =====
-// Vous créez 3 liens de paiement dans votre application Wave (un par formule) et les collez ici.
+// Votre lien Wave accepte un montant en paramètre (?amount=X) : un seul lien de base suffit pour toutes les formules.
+const WAVE_PAY_BASE = 'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/';
 const WAVE_LINKS = {
-  day:   'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/?amount=200',
-  week:  'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/?amount=500',
-  month: 'https://pay.wave.com/m/M_ci_zuuaUxu5So7j/c/ci/?amount=1500'
+  day:   WAVE_PAY_BASE+'?amount=200',
+  week:  WAVE_PAY_BASE+'?amount=500',
+  month: WAVE_PAY_BASE+'?amount=1500'
 };
 const WAVE_NUMBER = '+225 0700000000'; // Votre numéro Wave (paiement manuel de secours)
 
+// Renvoie la formule applicable : tarif ENSEIGNANT selon son niveau, ou formule élève/étudiant sélectionnée
+function currentPlanInfo(){
+  if(window.CURRENT_ROLE==='teacher' && !window.WAVE_TEST_MODE){
+    const tl=(window.CURRENT_PROFILE&&window.CURRENT_PROFILE.teacher_level)||'college_lycee';
+    const tp=TEACHER_PLANS[tl]||TEACHER_PLANS.college_lycee;
+    return {plan:'month', label:tp.label+' — 30 jours', amount:tp.amount, hours:720, link:WAVE_PAY_BASE+'?amount='+tp.amount};
+  }
+  const std={
+    day:{label:'Pass Jour (24h)',amount:200,hours:24},
+    week:{label:'Pass Semaine (7 jours)',amount:500,hours:168},
+    month:{label:'Pro Mensuel (30 jours)',amount:1500,hours:720}
+  };
+  const s=std[selectedPlan]||std.month;
+  return {plan:selectedPlan||'month', label:s.label, amount:s.amount, hours:s.hours, link:WAVE_PAY_BASE+'?amount='+s.amount};
+}
+
 function startWavePayment(){
-  const prices={day:'200',week:'500',month:'1 500'};
-  const labels={day:'Pass Jour (24h)',week:'Pass Semaine (7 jours)',month:'Pro Mensuel (30 jours)'};
-  const link = WAVE_LINKS[selectedPlan];
-  const configured = link && !link.includes('VOTRE_LIEN');
+  const info = currentPlanInfo();
+  const link = info.link;
+  const configured = true;
   let ov=document.getElementById('wave-pay-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='wave-pay-overlay'; ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;font-family:DM Sans,sans-serif;padding:20px;overflow-y:auto;'; document.body.appendChild(ov); }
   ov.innerHTML='<div style="width:100%;max-width:420px;margin:auto;background:#0c0c22;border:1px solid rgba(29,195,166,0.4);border-radius:18px;padding:30px 26px;text-align:center;">'
     +'<div style="font-size:38px;margin-bottom:8px;">💳</div>'
     +'<div style="font-family:Cinzel,serif;font-size:18px;font-weight:700;color:#19E89C;margin-bottom:6px;">Paiement Wave</div>'
-    +'<div style="font-size:14px;color:#f0f0f8;margin-bottom:4px;">'+labels[selectedPlan]+'</div>'
-    +'<div style="font-size:26px;color:#FFD700;font-weight:800;margin-bottom:18px;">'+prices[selectedPlan]+' FCFA</div>'
+    +'<div style="font-size:14px;color:#f0f0f8;margin-bottom:4px;">'+info.label+'</div>'
+    +'<div style="font-size:26px;color:#FFD700;font-weight:800;margin-bottom:18px;">'+info.amount.toLocaleString('fr-FR')+' FCFA</div>'
     +(configured
       ? '<a href="'+link+'" target="_blank" onclick="waveAwaitConfirm()" style="display:block;width:100%;padding:15px;border-radius:10px;background:linear-gradient(135deg,#1DC3A6,#19E89C);color:#04231c;font-family:Cinzel,serif;font-weight:700;font-size:14px;text-decoration:none;cursor:pointer;box-sizing:border-box;">Payer maintenant avec Wave →</a>'
         +'<div style="font-size:12px;color:#999;margin-top:14px;line-height:1.5;">Vous serez redirigé vers Wave. Après le paiement, revenez ici et cliquez sur « J\'ai payé ».</div>'
@@ -3101,12 +3179,11 @@ function startWavePayment(){
 // Après paiement : l'utilisateur saisit l'identifiant de transaction Wave pour traçabilité
 function waveAwaitConfirm(){
   const ov=document.getElementById('wave-pay-overlay');
-  const labels={day:'Pass Jour',week:'Pass Semaine',month:'Pro Mensuel'};
-  const amounts={day:200,week:500,month:1500};
+  const info = currentPlanInfo();
   ov.innerHTML='<div style="width:100%;max-width:420px;margin:auto;background:#0c0c22;border:1px solid rgba(29,195,166,0.4);border-radius:18px;padding:30px 26px;text-align:center;">'
     +'<div style="font-size:38px;margin-bottom:8px;">📲</div>'
     +'<div style="font-family:Cinzel,serif;font-size:17px;font-weight:700;color:#19E89C;margin-bottom:10px;">Confirmer votre paiement</div>'
-    +'<div style="font-size:12px;color:#bbb;line-height:1.6;margin-bottom:16px;">Saisissez l\'identifiant de la transaction Wave (reçu par SMS après le paiement). Cela permet de vérifier et d\'activer votre formule '+labels[selectedPlan]+'.</div>'
+    +'<div style="font-size:12px;color:#bbb;line-height:1.6;margin-bottom:16px;">Saisissez l\'identifiant de la transaction Wave (reçu par SMS après le paiement). Cela permet de vérifier et d\'activer votre formule '+info.label+'.</div>'
     +'<input id="wave-txid" type="text" placeholder="Ex : TAKCI..." style="width:100%;padding:12px 14px;border-radius:9px;background:#15152e;border:1.5px solid rgba(25,232,156,0.3);color:#fff;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:6px;">'
     +'<div id="wave-confirm-msg" style="font-size:12px;color:#ffcb91;min-height:18px;margin-bottom:8px;"></div>'
     +'<button onclick="submitWavePayment()" style="width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,#1DC3A6,#19E89C);color:#04231c;font-family:Cinzel,serif;font-weight:700;font-size:13px;cursor:pointer;">Valider mon paiement</button>'
@@ -3119,8 +3196,7 @@ function waveAwaitConfirm(){
 async function submitWavePayment(){
   const txid=(document.getElementById('wave-txid')?.value||'').trim();
   const msg=document.getElementById('wave-confirm-msg');
-  const amounts={day:200,week:500,month:1500};
-  const durations={day:24,week:168,month:720}; // heures
+  const info = currentPlanInfo(); // formule + montant (tarif enseignant ou élève/étudiant)
   if(txid.length<4){ if(msg){msg.style.color='#ff9999';msg.textContent='Veuillez saisir un identifiant de transaction valide.';} return; }
   // MODE TEST (admin) : ne rien enregistrer, juste confirmer que le parcours fonctionne
   if(window.WAVE_TEST_MODE){
@@ -3139,12 +3215,12 @@ async function submitWavePayment(){
     const uid = window.CURRENT_PROFILE.id;
     // 1) Enregistrer le paiement (statut "pending" : à vérifier par l'admin)
     await supa.from('payments').insert({
-      user_id: uid, plan: selectedPlan, amount_fcfa: amounts[selectedPlan],
+      user_id: uid, plan: info.plan, amount_fcfa: info.amount,
       provider:'wave', reference: txid, status:'pending'
     });
-    // 2) Activer l'accès Pro provisoirement (l'admin confirmera/infirmera ensuite)
-    const expiry = new Date(Date.now()+durations[selectedPlan]*3600*1000).toISOString();
-    await supa.from('profiles').update({ plan:selectedPlan, plan_expires_at:expiry, updated_at:new Date().toISOString() }).eq('id', uid);
+    // 2) Activer l'accès provisoirement (l'admin confirmera/infirmera ensuite)
+    const expiry = new Date(Date.now()+info.hours*3600*1000).toISOString();
+    await supa.from('profiles').update({ plan:info.plan, plan_expires_at:expiry, updated_at:new Date().toISOString() }).eq('id', uid);
     // 3) Recharger le profil
     const {data:prof}=await supa.from('profiles').select('*').eq('id',uid).single();
     if(prof) applyProfileToApp(prof);
@@ -3153,7 +3229,7 @@ async function submitWavePayment(){
       const ov=document.getElementById('wave-pay-overlay'); if(ov) ov.style.display='none';
       const ex=document.getElementById('access-expired-overlay'); if(ex) ex.style.display='none';
       if(typeof render==='function') render();
-      alert('✅ Votre formule '+selectedPlan+' est activée !\n\nMerci. Votre paiement sera vérifié par l\'administration.');
+      alert('✅ Votre formule « '+info.label+' » est activée !\n\nMerci. Votre paiement sera vérifié par l\'administration.');
     },800);
   }catch(e){
     if(msg){ msg.style.color='#ff9999'; msg.textContent='Erreur : '+e.message; }
