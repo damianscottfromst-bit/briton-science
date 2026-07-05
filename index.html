@@ -3173,7 +3173,21 @@ async function doRegister(){
     S.role=null;
     if(typeof render==='function') render();
   }catch(e){
-    const msg = /already registered|already exists|User already/i.test(e.message) ? 'Cet email a déjà un compte. Connectez-vous.' : e.message;
+    console.error('Erreur inscription (détail complet):', e);
+    // Extraire un message lisible quelle que soit la forme de l'erreur
+    let raw = '';
+    if(typeof e === 'string') raw = e;
+    else if(e && e.message) raw = e.message;
+    else if(e && e.error_description) raw = e.error_description;
+    else if(e && e.msg) raw = e.msg;
+    else { try{ raw = JSON.stringify(e); }catch(_){ raw = String(e); } }
+    if(!raw || raw==='{}') raw = 'Une erreur est survenue lors de la création du compte. Vérifiez votre connexion et réessayez.';
+    let msg;
+    if(/already registered|already exists|User already/i.test(raw)) msg='Cet email a déjà un compte. Connectez-vous.';
+    else if(/rate limit|rate exceeded|too many/i.test(raw)) msg='Trop de tentatives. Patientez quelques minutes avant de réessayer.';
+    else if(/password/i.test(raw) && /least|court|short|6/i.test(raw)) msg='Le mot de passe doit faire au moins 6 caractères.';
+    else if(/invalid.*email|email.*invalid/i.test(raw)) msg='Adresse email invalide.';
+    else msg=raw;
     showErr(msg);
   }
 }
@@ -3380,7 +3394,7 @@ async function submitWavePayment(){
     const expiry = new Date(Date.now()+info.hours*3600*1000).toISOString();
     await supa.from('profiles').update({ plan:info.plan, plan_expires_at:expiry, updated_at:new Date().toISOString() }).eq('id', uid);
     // 3) Recharger le profil
-    const {data:prof}=await supa.from('profiles').select('*').eq('id',uid).single();
+    const {data:prof}=await supa.from('profiles').select('*').eq('id',uid).maybeSingle();
     if(prof) applyProfileToApp(prof);
     if(msg){ msg.style.color='#19E89C'; msg.textContent='✅ Activé !'; }
     setTimeout(()=>{
