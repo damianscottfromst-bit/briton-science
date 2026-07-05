@@ -251,8 +251,19 @@ devtoolsOpen = false;
       <div id="reg-step3hint" style="font-size:13px;color:#9999b0;margin-bottom:16px;">Indiquez votre âge et votre classe.</div>
 
       <div id="reg-ageBlock">
-        <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Votre âge</label>
-        <input id="reg-age" type="number" min="3" max="100" placeholder="Ex : 16" oninput="regOnAge()" style="width:100%;padding:12px 14px;border-radius:9px;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,215,0,0.15);color:#f0f0f8;font-size:14px;outline:none;">
+        <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Votre date de naissance</label>
+        <div style="display:flex;gap:8px;">
+          <select id="reg-birthDay" onchange="regOnBirthDate()" style="flex:1;padding:12px 8px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#fff;font-size:14px;outline:none;">
+            <option value="">Jour</option>
+          </select>
+          <select id="reg-birthMonth" onchange="regOnBirthDate()" style="flex:1.4;padding:12px 8px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#fff;font-size:14px;outline:none;">
+            <option value="">Mois</option>
+          </select>
+          <select id="reg-birthYear" onchange="regOnBirthDate()" style="flex:1.1;padding:12px 8px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#fff;font-size:14px;outline:none;">
+            <option value="">Année</option>
+          </select>
+        </div>
+        <input id="reg-age" type="hidden">
         <div id="reg-levelBadge" style="margin-top:10px;"></div>
       </div>
 
@@ -2801,13 +2812,55 @@ async function doLogin(){
   try{
     const {data, error} = await supa.auth.signInWithPassword({email, password:pass});
     if(error) throw error;
+    // Vrai utilisateur connecté : effacer toute session admin résiduelle du navigateur
+    try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
+    window.CURRENT_ROLE=null;
+    const uid = data.user.id;
     // Charger le profil
-    const {data:prof} = await supa.from('profiles').select('*').eq('id', data.user.id).single();
+    let {data:prof} = await supa.from('profiles').select('*').eq('id', uid).single();
+    // Si le profil n'est pas encore complet (1ère connexion après confirmation email), le compléter depuis les métadonnées
+    const meta = data.user.user_metadata || {};
+    if((!prof || !prof.role) && meta.role){
+      // Téléverser la pièce enseignant en attente (si présente dans cette session navigateur)
+      let idPhotoUrl = prof ? prof.id_photo_path : null;
+      if(meta.role==='teacher' && window.PENDING_TEACHER_PHOTO){
+        try{
+          const f = window.PENDING_TEACHER_PHOTO;
+          const ext = (f.name.split('.').pop()||'jpg').toLowerCase();
+          const path = uid+'/piece_'+Date.now()+'.'+ext;
+          const {error:upErr} = await supa.storage.from('teacher-ids').upload(path, f, {upsert:true, contentType:f.type});
+          if(!upErr){ idPhotoUrl = path; window.PENDING_TEACHER_PHOTO=null; }
+        }catch(ep){ console.warn('upload pièce diff', ep); }
+      }
+      const tempExpiry = new Date(Date.now()+2*60*60*1000).toISOString();
+      const pdata = {
+        id: uid, email: email,
+        full_name: meta.full_name||'', role: meta.role, age: meta.age||null, niveau: meta.niveau||null,
+        id_type: meta.id_type||null, id_number: meta.id_number||null,
+        id_photo_path: idPhotoUrl,
+        teacher_verified: false,
+        teacher_level: meta.teacher_level||null,
+        temp_access_expires_at: (prof && prof.temp_access_expires_at) ? prof.temp_access_expires_at : tempExpiry,
+        updated_at: new Date().toISOString()
+      };
+      let {error:pErr} = await supa.from('profiles').upsert(pdata, {onConflict:'id'});
+      if(pErr && /teacher_level/i.test(pErr.message||'')){ delete pdata.teacher_level; await supa.from('profiles').upsert(pdata, {onConflict:'id'}); }
+      const r = await supa.from('profiles').select('*').eq('id', uid).single();
+      prof = r.data;
+    }
     if(prof){ applyProfileToApp(prof); }
-    else { window.CURRENT_ROLE='student'; window.CURRENT_USER=email; }
+    else { window.CURRENT_ROLE='student'; window.CURRENT_USER=email; window.CURRENT_PROFILE=null; }
     closeLoginOverlay(); S.role=null; render();
+    // Si l'accès gratuit / abonnement est déjà expiré, proposer le paiement
+    if(prof){ const acc=accessActive(prof); if(!acc.active) showAccessExpired(); }
   }catch(e){
-    if(err){ err.style.display='block'; err.style.color='#ff8888'; err.textContent='❌ '+(e.message==='Invalid login credentials'?'Email ou mot de passe incorrect.':e.message); }
+    if(err){
+      err.style.display='block'; err.style.color='#ff8888';
+      let m = e.message;
+      if(m==='Invalid login credentials') m='Email ou mot de passe incorrect.';
+      else if(/email not confirmed|Email not confirmed/i.test(m)) m='📧 Votre email n\'est pas encore confirmé. Cliquez sur le lien reçu par email, puis reconnectez-vous.';
+      err.textContent='❌ '+m;
+    }
     const p=document.getElementById('login-pass'); if(p){p.value='';p.focus();}
   }
 }
@@ -2867,11 +2920,12 @@ function regTeachLevelChanged(){
 function openRegister(){
   document.getElementById('login-overlay').style.display='none';
   const r=document.getElementById('register-overlay'); r.style.display='flex'; r.style.opacity='1';
+  populateBirthSelectors();
   regGo(1);
 }
 function backToLogin(){
-  document.getElementById('register-overlay').style.display='none';
-  const l=document.getElementById('login-overlay'); l.style.display='flex'; l.style.opacity='1';
+  const ro=document.getElementById('register-overlay'); if(ro) ro.style.display='none';
+  const l=document.getElementById('login-overlay'); if(l){ l.style.display='flex'; l.style.opacity='1'; }
 }
 function regGo(step){
   [1,2,3].forEach(i=>{
@@ -2930,6 +2984,39 @@ function regLevelsForAge(age){
   if(age>=15&&age<=23) lv.push('lycee');
   if(age>=20) lv.push('superieur');
   return lv;
+}
+// Remplit les listes jour / mois / année du calendrier de naissance
+function populateBirthSelectors(){
+  const dSel=document.getElementById('reg-birthDay');
+  const mSel=document.getElementById('reg-birthMonth');
+  const ySel=document.getElementById('reg-birthYear');
+  if(!dSel||!mSel||!ySel) return;
+  if(dSel.dataset.filled) return; // éviter de remplir deux fois
+  // Jours 1-31
+  for(let d=1; d<=31; d++){ const o=document.createElement('option'); o.value=d; o.textContent=d; dSel.appendChild(o); }
+  // Mois
+  const mois=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  mois.forEach((m,i)=>{ const o=document.createElement('option'); o.value=(i+1); o.textContent=m; mSel.appendChild(o); });
+  // Années : de (année courante - 3) à (année courante - 80), plausibles pour élèves/étudiants
+  const now=new Date().getFullYear();
+  for(let y=now-3; y>=now-80; y--){ const o=document.createElement('option'); o.value=y; o.textContent=y; ySel.appendChild(o); }
+  dSel.dataset.filled='1';
+}
+// Calcule l'âge à partir de la date choisie et déclenche la logique de niveau
+function regOnBirthDate(){
+  const d=parseInt(document.getElementById('reg-birthDay').value);
+  const m=parseInt(document.getElementById('reg-birthMonth').value);
+  const y=parseInt(document.getElementById('reg-birthYear').value);
+  const hidden=document.getElementById('reg-age');
+  if(!d||!m||!y){ if(hidden) hidden.value=''; regOnAge(); return; }
+  // Calcul de l'âge exact
+  const today=new Date();
+  const birth=new Date(y, m-1, d);
+  let age=today.getFullYear()-y;
+  const mDiff=today.getMonth()-(m-1);
+  if(mDiff<0 || (mDiff===0 && today.getDate()<d)) age--;
+  if(hidden) hidden.value=age;
+  regOnAge();
 }
 function regOnAge(){
   const age=parseInt(document.getElementById('reg-age').value);
@@ -2997,7 +3084,7 @@ async function doRegister(){
     if(!regPhotoFile){ showErr('Veuillez ajouter une photo ou un PDF de votre pièce justificative.'); return; }
   } else {
     age=parseInt(document.getElementById('reg-age')?.value);
-    if(!age){ showErr('Veuillez indiquer votre âge.'); return; }
+    if(!age){ showErr('Veuillez indiquer votre date de naissance complète (jour, mois et année).'); return; }
     if(!regLevel){ showErr('Veuillez sélectionner votre classe exacte.'); return; }
     niveau=regLevel;
     // Vérification de cohérence âge ↔ niveau (sécurité)
@@ -3012,53 +3099,68 @@ async function doRegister(){
   if(!supa){ showErr('Service indisponible, réessayez dans un instant.'); return; }
   if(err){ err.style.display='block'; err.style.color='#FFD700'; err.textContent='⏳ Création du compte en cours…'; }
   try{
-    // 1) Créer le compte Auth
-    const {data, error} = await supa.auth.signUp({email, password:pass, options:{data:{full_name:name}}});
+    // Préparer les métadonnées du compte (stockées dans le compte Auth, appliquées à la 1ère connexion)
+    const pendingPhotoName = regPhotoFile ? regPhotoFile.name : null;
+    const metadata = {
+      full_name:name, role:role, age:age, niveau:niveau,
+      id_type:idType, id_number:idNum,
+      teacher_level: role==='teacher' ? regTeachLevel : null
+    };
+    // 1) Créer le compte Auth avec les métadonnées
+    const {data, error} = await supa.auth.signUp({
+      email, password:pass,
+      options:{ data: metadata }
+    });
     if(error) throw error;
+    // Nouveau vrai compte : effacer toute session admin résiduelle du navigateur
+    try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
+    window.CURRENT_ROLE=null;
     const uid = data.user?.id;
-    // 1b) Connexion (si email non confirmé, session directe)
-    let sess = data.session;
-    if(!sess){
-      const {data:sd} = await supa.auth.signInWithPassword({email, password:pass}).catch(()=>({data:{}}));
-      sess = sd?.session;
-    }
-    // 2) Pour un enseignant : téléverser la photo de la pièce dans le stockage Supabase
+    const hasSession = !!data.session; // session immédiate seulement si "Confirm email" est désactivé
+
+    // 2) Si l'enseignant a une pièce ET qu'on a une session : téléverser tout de suite.
+    //    Sinon (confirmation email requise), la pièce sera téléversée à la 1ère connexion.
     let idPhotoUrl = null;
-    if(role==='teacher' && regPhotoFile && uid){
+    if(role==='teacher' && regPhotoFile && uid && hasSession){
       try{
         const ext = (regPhotoFile.name.split('.').pop()||'jpg').toLowerCase();
         const path = uid+'/piece_'+Date.now()+'.'+ext;
         const {error:upErr} = await supa.storage.from('teacher-ids').upload(path, regPhotoFile, {upsert:true, contentType:regPhotoFile.type});
         if(!upErr){ idPhotoUrl = path; }
-        else { console.warn('Upload pièce:', upErr.message); }
       }catch(ePhoto){ console.warn('Photo upload échouée', ePhoto); }
     }
-    // 3) Renseigner le profil. L'enseignant a un accès IMMÉDIAT (fenêtre comme les autres),
-    //    son statut reste "non vérifié" jusqu'à validation de la pièce par l'admin.
-    const tempExpiry = new Date(Date.now()+2*60*60*1000).toISOString(); // accès gratuit 2h
+
+    // 3) CAS A — Email non confirmé requis (pas de session) : message et on s'arrête là
+    if(!hasSession){
+      // Conserver la pièce en mémoire pour la téléverser après confirmation
+      if(role==='teacher' && regPhotoFile){ window.PENDING_TEACHER_PHOTO = regPhotoFile; }
+      const ov=document.getElementById('login-overlay');
+      if(err){ err.style.display='none'; }
+      // Écran de confirmation
+      showEmailConfirmScreen(email, role);
+      return;
+    }
+
+    // 4) CAS B — Session active (Confirm email désactivé) : compléter le profil et entrer
+    const tempExpiry = new Date(Date.now()+2*60*60*1000).toISOString();
     const profileData = {
+      id: uid, email: email,
       full_name:name, role:role, age:age, niveau:niveau,
       id_type:idType, id_number:idNum,
       id_photo_path: idPhotoUrl,
       teacher_verified: false,
-      teacher_level: role==='teacher' ? regTeachLevel : null, // niveau enseigné (détermine le tarif)
-      temp_access_expires_at: tempExpiry, // TOUS ont l'accès gratuit 2h immédiat (y compris l'enseignant)
+      teacher_level: role==='teacher' ? regTeachLevel : null,
+      temp_access_expires_at: tempExpiry,
       updated_at:new Date().toISOString()
     };
-    if(uid){
-      await new Promise(r=>setTimeout(r,600)); // laisser le trigger créer la ligne
-      let {error:upErr} = await supa.from('profiles').update(profileData).eq('id', uid);
-      // Si la colonne teacher_level n'existe pas encore en base, réessayer sans elle (compatibilité)
-      if(upErr && /teacher_level/i.test(upErr.message||'')){
-        delete profileData.teacher_level;
-        await supa.from('profiles').update(profileData).eq('id', uid);
-      }
+    await new Promise(r=>setTimeout(r,600));
+    let {error:upErr} = await supa.from('profiles').upsert(profileData, {onConflict:'id'});
+    if(upErr && /teacher_level/i.test(upErr.message||'')){
+      delete profileData.teacher_level;
+      await supa.from('profiles').upsert(profileData, {onConflict:'id'});
     }
-    // 4) Charger le profil et entrer dans l'app
-    if(uid){
-      const {data:prof} = await supa.from('profiles').select('*').eq('id', uid).single();
-      if(prof){ applyProfileToApp(prof); }
-    }
+    const {data:prof} = await supa.from('profiles').select('*').eq('id', uid).single();
+    if(prof){ applyProfileToApp(prof); }
     if(role==='teacher'){
       const tp=TEACHER_PLANS[regTeachLevel]||{label:'Enseignant',amount:5000};
       alert('✅ Votre compte enseignant est créé et activé !\n\n🎁 Vous bénéficiez de 2 heures gratuites de découverte.\n💼 Ensuite, votre formule '+tp.label+' est à '+tp.amount.toLocaleString('fr-FR')+' FCFA/mois (paiement Wave).\n\nVotre pièce justificative sera vérifiée par l\'administration. ⚠️ Tout document non conforme entraînera la suspension du compte.');
@@ -3069,6 +3171,51 @@ async function doRegister(){
   }catch(e){
     const msg = /already registered|already exists|User already/i.test(e.message) ? 'Cet email a déjà un compte. Connectez-vous.' : e.message;
     showErr(msg);
+  }
+}
+
+// Écran affiché après inscription quand la confirmation d'email est requise (overlay dédié)
+function showEmailConfirmScreen(email, role){
+  const ro=document.getElementById('register-overlay'); if(ro) ro.style.display='none';
+  const lo=document.getElementById('login-overlay'); if(lo) lo.style.display='none';
+  let ov=document.getElementById('email-confirm-overlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='email-confirm-overlay';
+    ov.style.cssText='position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#07071a,#0c0c22 60%,#07071a);display:flex;align-items:center;justify-content:center;font-family:DM Sans,sans-serif;padding:20px;overflow-y:auto;';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML='<div style="width:100%;max-width:420px;margin:auto;background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.25);border-radius:16px;padding:36px 30px;box-shadow:0 20px 60px rgba(0,0,0,0.6);text-align:center;">'
+    +'<div style="font-size:48px;margin-bottom:14px;">📧</div>'
+    +'<div style="font-family:Cinzel,serif;font-size:20px;font-weight:700;color:#FFD700;margin-bottom:12px;">Vérifiez votre email</div>'
+    +'<div style="font-size:14px;color:#ccc;line-height:1.7;margin-bottom:8px;">Un email de confirmation vient d\'être envoyé à :</div>'
+    +'<div style="font-size:14px;color:#7ec8ff;font-weight:700;margin-bottom:18px;word-break:break-all;">'+email+'</div>'
+    +'<div style="background:rgba(90,170,255,0.1);border:1px solid rgba(90,170,255,0.3);border-radius:10px;padding:14px 16px;font-size:13px;color:#cfe6ff;line-height:1.8;text-align:left;margin-bottom:18px;">'
+      +'<b>Pour activer votre compte :</b><br>'
+      +'1. Ouvrez votre boîte mail<br>'
+      +'2. Cliquez sur le lien dans l\'email de Briton Science<br>'
+      +'3. Revenez ici et connectez-vous<br>'
+      +'<span style="color:#ffcb91;">⚠️ Vérifiez aussi vos courriers indésirables (spam).</span>'
+      +(role==='teacher'?'<br><span style="color:#7ef0e8;">📸 Votre pièce sera enregistrée à votre première connexion (gardez cet onglet ouvert).</span>':'')
+    +'</div>'
+    +'<button onclick="emailConfirmToLogin()" style="width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a;font-family:Cinzel,serif;font-weight:700;font-size:14px;cursor:pointer;">J\'ai confirmé — Me connecter</button>'
+    +'<button onclick="resendConfirmEmail(\''+email.replace(/'/g,"\\'")+'\')" style="width:100%;padding:11px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:transparent;color:#999;font-size:12px;cursor:pointer;margin-top:8px;">Renvoyer l\'email de confirmation</button>'
+    +'</div>';
+  ov.style.display='flex';
+}
+function emailConfirmToLogin(){
+  const ov=document.getElementById('email-confirm-overlay'); if(ov) ov.style.display='none';
+  const lo=document.getElementById('login-overlay'); if(lo){ lo.style.display='flex'; lo.style.opacity='1'; }
+}
+
+// Renvoyer l'email de confirmation
+async function resendConfirmEmail(email){
+  if(!supa) return;
+  try{
+    await supa.auth.resend({type:'signup', email:email});
+    alert('📧 Email de confirmation renvoyé à '+email+'.\n\nVérifiez votre boîte mail (et les spams).');
+  }catch(e){
+    alert('Impossible de renvoyer l\'email : '+e.message);
   }
 }
 
@@ -3246,13 +3393,13 @@ async function submitWavePayment(){
 // Au chargement : init Supabase, puis vérifier s'il y a une session active
 window.addEventListener('DOMContentLoaded', async ()=>{
   initSupabase();
-  // 1) Session admin locale ?
-  if(checkAdminSession()){ closeLoginOverlay(); if(typeof render==='function') render(); return; }
-  // 2) Session Supabase active ?
+  // 1) PRIORITÉ à une session Supabase active (vrai utilisateur connecté)
   if(supa){
     try{
       const {data} = await supa.auth.getSession();
       if(data && data.session){
+        // Un vrai utilisateur est connecté → on efface toute session admin résiduelle
+        try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
         const {data:prof} = await supa.from('profiles').select('*').eq('id', data.session.user.id).single();
         if(prof){
           const acc = accessActive(prof);
@@ -3265,6 +3412,8 @@ window.addEventListener('DOMContentLoaded', async ()=>{
       }
     }catch(e){ console.error(e); }
   }
+  // 2) Sinon seulement, vérifier une session admin locale
+  if(checkAdminSession()){ closeLoginOverlay(); if(typeof render==='function') render(); return; }
   // 3) Sinon, l'écran de connexion reste affiché
 });</script>
 </body>
