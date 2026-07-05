@@ -2787,10 +2787,19 @@ function applyProfileToApp(profile){
   if(profile.role==='teacher'){ window.CURRENT_ROLE='teacher'; }
   else if(profile.niveau==='superieur'){ window.CURRENT_ROLE = profile.role==='grande_ecole'?'grande_ecole':'university'; }
   else { window.CURRENT_ROLE='student'; }
-  // Étudiant du supérieur : accès à TOUS les cycles (recherche), pré-sélection du supérieur
-  if(profile.niveau==='superieur'){ S.forceCycle=null; S.eduLevel='superieur'; window.STUDENT_CYCLES=null; }
-  // Élève : restreint à son groupe (primaire / collège / lycée uniquement, jamais le supérieur)
-  else if(profile.niveau){ window.STUDENT_CYCLES=['primaire','college','lycee']; S.eduLevel=profile.niveau; }
+  // Niveaux visibles selon le profil (logique cumulative : on voit son niveau + les niveaux inférieurs)
+  // - Enseignant / Étudiant du supérieur : TOUS les niveaux (aucune restriction)
+  // - Primérien  -> Primaire
+  // - Collégien  -> Primaire + Collège
+  // - Lycéen     -> Primaire + Collège + Lycée
+  if(profile.role==='teacher' || profile.niveau==='superieur'){
+    S.forceCycle=null; window.STUDENT_CYCLES=null;
+    S.eduLevel = profile.niveau || (profile.role==='teacher' ? (profile.teacher_level||'') : '');
+  } else if(profile.niveau){
+    const cumul = { primaire:['primaire'], college:['primaire','college'], lycee:['primaire','college','lycee'] };
+    window.STUDENT_CYCLES = cumul[profile.niveau] || ['primaire'];
+    S.eduLevel = profile.niveau;
+  }
 }
 
 // Connexion par email (Supabase)
