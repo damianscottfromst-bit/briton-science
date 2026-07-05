@@ -2817,7 +2817,7 @@ async function doLogin(){
     window.CURRENT_ROLE=null;
     const uid = data.user.id;
     // Charger le profil
-    let {data:prof} = await supa.from('profiles').select('*').eq('id', uid).single();
+    let {data:prof} = await supa.from('profiles').select('*').eq('id', uid).maybeSingle();
     // Si le profil n'est pas encore complet (1ère connexion après confirmation email), le compléter depuis les métadonnées
     const meta = data.user.user_metadata || {};
     if((!prof || !prof.role) && meta.role){
@@ -2845,7 +2845,7 @@ async function doLogin(){
       };
       let {error:pErr} = await supa.from('profiles').upsert(pdata, {onConflict:'id'});
       if(pErr && /teacher_level/i.test(pErr.message||'')){ delete pdata.teacher_level; await supa.from('profiles').upsert(pdata, {onConflict:'id'}); }
-      const r = await supa.from('profiles').select('*').eq('id', uid).single();
+      const r = await supa.from('profiles').select('*').eq('id', uid).maybeSingle();
       prof = r.data;
     }
     if(prof){ applyProfileToApp(prof); }
@@ -3157,10 +3157,14 @@ async function doRegister(){
     let {error:upErr} = await supa.from('profiles').upsert(profileData, {onConflict:'id'});
     if(upErr && /teacher_level/i.test(upErr.message||'')){
       delete profileData.teacher_level;
-      await supa.from('profiles').upsert(profileData, {onConflict:'id'});
+      const r2 = await supa.from('profiles').upsert(profileData, {onConflict:'id'});
+      upErr = r2.error;
     }
-    const {data:prof} = await supa.from('profiles').select('*').eq('id', uid).single();
-    if(prof){ applyProfileToApp(prof); }
+    if(upErr){ console.warn('Upsert profil:', upErr.message); }
+    let {data:prof} = await supa.from('profiles').select('*').eq('id', uid).maybeSingle();
+    // Filet de sécurité : si le profil n'a pas pu être lu, utiliser les données locales pour ne pas bloquer l'utilisateur
+    if(!prof){ prof = profileData; }
+    applyProfileToApp(prof);
     if(role==='teacher'){
       const tp=TEACHER_PLANS[regTeachLevel]||{label:'Enseignant',amount:5000};
       alert('✅ Votre compte enseignant est créé et activé !\n\n🎁 Vous bénéficiez de 2 heures gratuites de découverte.\n💼 Ensuite, votre formule '+tp.label+' est à '+tp.amount.toLocaleString('fr-FR')+' FCFA/mois (paiement Wave).\n\nVotre pièce justificative sera vérifiée par l\'administration. ⚠️ Tout document non conforme entraînera la suspension du compte.');
@@ -3400,7 +3404,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
       if(data && data.session){
         // Un vrai utilisateur est connecté → on efface toute session admin résiduelle
         try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
-        const {data:prof} = await supa.from('profiles').select('*').eq('id', data.session.user.id).single();
+        const {data:prof} = await supa.from('profiles').select('*').eq('id', data.session.user.id).maybeSingle();
         if(prof){
           const acc = accessActive(prof);
           applyProfileToApp(prof);
