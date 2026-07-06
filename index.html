@@ -1012,12 +1012,43 @@ for(const k in MATIERES_SERIE){const f=MATIERES_SERIE[k].find(s=>s.id===id);if(f
 return {id:id,label:id,icon:'✦',color:'#A8DADC'};
 }
 
-const PROG_DATA=[
-{subject:'Mathématiques',score:72,ex:14,icon:'∑',color:'#6C63FF'},
-{subject:'Français',score:85,ex:10,icon:'Aa',color:'#FF6B6B'},
-{subject:'Sciences',score:61,ex:8,icon:'⚗',color:'#2EC4B6'},
-{subject:'Anglais',score:78,ex:6,icon:'🌐',color:'#E9C46A'},
-];
+// Couleurs et icônes par matière (pour l'affichage de la progression réelle)
+const SUBJECT_STYLE = {
+  'Mathématiques':{icon:'∑',color:'#6C63FF'}, 'Maths':{icon:'∑',color:'#6C63FF'},
+  'Français':{icon:'Aa',color:'#FF6B6B'}, 'Sciences':{icon:'⚗',color:'#2EC4B6'},
+  'Physique-Chimie':{icon:'⚛',color:'#2EC4B6'}, 'SVT':{icon:'🧬',color:'#2EC4B6'},
+  'Anglais':{icon:'🌐',color:'#E9C46A'}, 'Histoire-Géographie':{icon:'🗺',color:'#F4A261'},
+  'Philosophie':{icon:'💭',color:'#B39DDB'}
+};
+const PROG_COLORS = ['#6C63FF','#FF6B6B','#2EC4B6','#E9C46A','#F4A261','#B39DDB','#4FC3F7','#81C784'];
+function subjectStyle(name, idx){
+  if(SUBJECT_STYLE[name]) return SUBJECT_STYLE[name];
+  return {icon:(name||'?').charAt(0).toUpperCase(), color:PROG_COLORS[idx%PROG_COLORS.length]};
+}
+// Clé de stockage de l'activité, propre à chaque utilisateur connecté
+function progKey(){
+  const u = (window.CURRENT_USER||window.CURRENT_PROFILE?.email||'anon');
+  return 'bs_activity_'+u;
+}
+// Charger l'activité réelle de l'utilisateur (depuis le stockage local du navigateur)
+function loadActivity(){
+  try{ const raw=localStorage.getItem(progKey()); return raw?JSON.parse(raw):{subjects:{},totalEx:0,totalCorrect:0,scoreSum:0,scoreCount:0}; }
+  catch(e){ return {subjects:{},totalEx:0,totalCorrect:0,scoreSum:0,scoreCount:0}; }
+}
+function saveActivity(a){ try{ localStorage.setItem(progKey(), JSON.stringify(a)); }catch(e){} }
+// Enregistrer une activité : génération d'exercice/cours, ou correction notée
+function trackActivity(type, subjectLabel, scorePercent){
+  const a=loadActivity();
+  const subj = subjectLabel||'Autre';
+  if(!a.subjects[subj]) a.subjects[subj]={ex:0,scoreSum:0,scoreCount:0};
+  if(type==='exercice'||type==='cours'){ a.subjects[subj].ex++; a.totalEx++; }
+  if(type==='correction' && typeof scorePercent==='number'){
+    a.subjects[subj].scoreSum += scorePercent; a.subjects[subj].scoreCount++;
+    a.scoreSum += scorePercent; a.scoreCount++; a.totalCorrect++;
+  }
+  a.lastActive = new Date().toISOString();
+  saveActivity(a);
+}
 let S={role:null,cycle:null,sub:null,subject:null,topic:'',tab:0,filiere:'',filiereMatiere:'',genMode:'',
 generated:'',exerciseForCorrect:'',studentAnswer:'',correction:'',loading:false,
 forceCycle:null,eduType:null,studentSummary:'',showFullForPupil:false};
@@ -2329,16 +2360,45 @@ r.readAsDataURL(file);
 }
 function buildProgress(){
 const sub=S.sub?getCycle()?.subs.find(s=>s.id===S.sub)?.label:'—';
+const a=loadActivity();
+const subjectNames=Object.keys(a.subjects);
+const totalEx=a.totalEx||0;
+const nbSubjects=subjectNames.length;
+const avgScore = a.scoreCount>0 ? Math.round(a.scoreSum/a.scoreCount) : null;
+// Construire la liste des matières travaillées (données réelles)
+const rows = subjectNames.map((name,i)=>{
+  const s=a.subjects[name];
+  const st=subjectStyle(name,i);
+  const score = s.scoreCount>0 ? Math.round(s.scoreSum/s.scoreCount) : null;
+  return {subject:name, ex:s.ex, score:score, icon:st.icon, color:st.color};
+}).sort((x,y)=>y.ex-x.ex);
+// Cas d'un nouvel utilisateur : aucune activité encore
+if(totalEx===0){
+  return `
+<div style="animation:fadeUp 0.35s ease both;">
+<div class="stat-cards">
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">📋</div><div class="stat-card-val">0</div><div class="stat-card-label">${t('prog_ex')}</div></div>
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">⭐</div><div class="stat-card-val" style="color:#2EC4B6;">—</div><div class="stat-card-label">${t('prog_score')}</div></div>
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">📚</div><div class="stat-card-val" style="color:#F4A261;">0</div><div class="stat-card-label">${t('prog_subj')}</div></div>
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">🎓</div><div class="stat-card-val" style="color:#E9C46A;font-size:16px;">${sub}</div><div class="stat-card-label">${t('prog_level')}</div></div>
+</div>
+<div style="text-align:center;padding:40px 20px;background:rgba(255,255,255,0.03);border-radius:13px;border:1px dashed rgba(108,99,255,0.3);margin-top:8px;">
+<div style="font-size:40px;margin-bottom:14px;">🚀</div>
+<div style="font-family:Cinzel,serif;font-size:15px;color:#a89cff;margin-bottom:8px;">Votre parcours commence ici</div>
+<div style="font-size:13px;color:#999;line-height:1.7;">Générez votre premier cours ou exercice, corrigez vos réponses,<br>et votre progression réelle apparaîtra ici au fil de votre travail.</div>
+</div>
+</div>`;
+}
 return `
 <div style="animation:fadeUp 0.35s ease both;">
 <div class="stat-cards">
-<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">📋</div><div class="stat-card-val">38</div><div class="stat-card-label">${t('prog_ex')}</div></div>
-<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">⭐</div><div class="stat-card-val" style="color:#2EC4B6;">74%</div><div class="stat-card-label">${t('prog_score')}</div></div>
-<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">📚</div><div class="stat-card-val" style="color:#F4A261;">4</div><div class="stat-card-label">${t('prog_subj')}</div></div>
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">📋</div><div class="stat-card-val">${totalEx}</div><div class="stat-card-label">${t('prog_ex')}</div></div>
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">⭐</div><div class="stat-card-val" style="color:#2EC4B6;">${avgScore!==null?avgScore+'%':'—'}</div><div class="stat-card-label">${t('prog_score')}</div></div>
+<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">📚</div><div class="stat-card-val" style="color:#F4A261;">${nbSubjects}</div><div class="stat-card-label">${t('prog_subj')}</div></div>
 <div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">🎓</div><div class="stat-card-val" style="color:#E9C46A;font-size:16px;">${sub}</div><div class="stat-card-label">${t('prog_level')}</div></div>
 </div>
 <div class="app-label" style="margin-bottom:14px;">${t('prog_title')}</div>
-${PROG_DATA.map(p=>`
+${rows.map(p=>`
 <div class="prog-subj">
 <div class="prog-subj-top">
 <div style="display:flex;align-items:center;gap:9px;">
@@ -2346,13 +2406,13 @@ ${PROG_DATA.map(p=>`
 <span style="font-size:13px;font-weight:600;">${p.subject}</span>
 </div>
 <div style="display:flex;align-items:center;gap:10px;">
-<span style="font-size:11px;color:#888;">${p.ex} exercices</span>
-<span style="font-size:14px;font-weight:800;color:${p.color};">${p.score}%</span>
+<span style="font-size:11px;color:#888;">${p.ex} ${p.ex>1?'activités':'activité'}</span>
+${p.score!==null?`<span style="font-size:14px;font-weight:800;color:${p.color};">${p.score}%</span>`:`<span style="font-size:11px;color:#666;">non noté</span>`}
 </div>
 </div>
-<div class="prog-bar-wrap">
+${p.score!==null?`<div class="prog-bar-wrap">
 <div class="prog-bar" style="background:linear-gradient(90deg,${p.color}88,${p.color});--w:${p.score}%;width:${p.score}%;"></div>
-</div>
+</div>`:''}
 </div>`).join('')}
 <div class="tip-box" style="background:rgba(108,99,255,0.08);border:1px solid rgba(108,99,255,0.2);color:#a89cff;">
 ${t('prog_tip')}
@@ -2451,6 +2511,11 @@ S.studentSummary=await callClaude([{role:'user',content:'Voici le cours complet 
 }catch(e){S.studentSummary='';}
 }
 setApiBusy(false);
+// Enregistrer l'activité réelle (uniquement si la génération a réussi)
+if(S.generated && !S.generated.startsWith('❌') && !S.generated.startsWith('⏳')){
+  const subjLabel = (findSubject(S.subject)?.label) || S.subject || 'Autre';
+  trackActivity(isLesson?'cours':'exercice', subjLabel);
+}
 S.loading=false;render();
 }
 async function doCorrect(){
@@ -2506,6 +2571,17 @@ messages=[{role:'user',content:prompt}];
 S.correction=await callClaudeFull(messages,system,8000);
 }catch(e){console.error(e);S.correction=/504|timeout/i.test(e.message)?'⏳ La correction a pris trop de temps. Veuillez réessayer.':'❌ '+e.message+' — Vérifiez votre connexion internet.';}
 setApiBusy(false);
+// Enregistrer l'activité de correction, avec la note si l'élève a fourni ses réponses
+if(S.correction && !S.correction.startsWith('❌') && !S.correction.startsWith('⏳')){
+  const subjLabel = (findSubject(S.subject)?.label) || S.subject || 'Autre';
+  let scorePct = null;
+  // Extraire une note du corrigé (ex: "12/20", "15 / 20") uniquement si l'élève avait donné ses réponses
+  if(S.studentAnswer && S.studentAnswer.trim()){
+    const m = S.correction.match(/(\d{1,2}(?:[.,]\d)?)\s*\/\s*20/);
+    if(m){ scorePct = Math.round(parseFloat(m[1].replace(',','.'))/20*100); }
+  }
+  trackActivity('correction', subjLabel, scorePct);
+}
 S.loading=false;render();
 }
 let LANG = 'fr';
