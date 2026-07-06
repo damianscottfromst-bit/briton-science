@@ -1798,6 +1798,20 @@ win.document.open();
 win.document.write(html);
 win.document.close();
 }
+// Construit un document combinant le SUJET (exercice) puis le CORRIGÉ, pour un seul PDF/Word
+function buildExerciseWithCorrection(){
+  let exercice = (S.exerciseForCorrect||'').trim();
+  // Si l'exercice vient d'un fichier importé, utiliser le texte extrait du PDF
+  if(!exercice && S.pdfText){ exercice = S.pdfText.trim(); }
+  const corrige = (S.correction||'').trim();
+  let out = '';
+  if(exercice){
+    out += '# Sujet\n\n' + exercice + '\n\n';
+    out += '---\n\n';
+  }
+  out += '# Corrigé\n\n' + corrige;
+  return mdFormat(out);
+}
 
 // Construire le HTML d'impression (avec MathJax + en-tête Briton Science)
 function buildPrintHTML(content,titre){
@@ -2317,8 +2331,8 @@ ${S.correction?`
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid rgba(255,107,107,0.2);padding-bottom:12px;flex-wrap:wrap;gap:8px;">
 <div class="result-label" style="color:#FF6B6B;font-size:14px;">${t('cor_label')}</div>
 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-<button onclick="downloadPDF(mdFormat(S.correction),getDocTitle('Corrige'))" style="font-size:10px;color:#FF6B6B;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:6px;padding:5px 12px;cursor:pointer;">📄 PDF</button>
-${canExportWord()?`<button onclick="downloadWord(mdFormat(S.correction),getDocTitle('Corrige'))" style="font-size:10px;color:#6C63FF;background:rgba(108,99,255,0.12);border:1px solid rgba(108,99,255,0.35);border-radius:6px;padding:5px 12px;cursor:pointer;">📝 Word</button>`:''}
+<button onclick="downloadPDF(buildExerciseWithCorrection(),getDocTitle('Sujet-Corrige'))" style="font-size:10px;color:#FF6B6B;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:6px;padding:5px 12px;cursor:pointer;">📄 PDF (sujet + corrigé)</button>
+${canExportWord()?`<button onclick="downloadWord(buildExerciseWithCorrection(),getDocTitle('Sujet-Corrige'))" style="font-size:10px;color:#6C63FF;background:rgba(108,99,255,0.12);border:1px solid rgba(108,99,255,0.35);border-radius:6px;padding:5px 12px;cursor:pointer;">📝 Word</button>`:''}
 <button onclick="navigator.clipboard.writeText(S.correction).then(()=>{this.textContent='✅ Copié!';setTimeout(()=>this.textContent='📋 Copier',2000)})" style="font-size:10px;color:#2EC4B6;background:rgba(46,196,182,0.1);border:1px solid rgba(46,196,182,0.3);border-radius:6px;padding:5px 12px;cursor:pointer;">📋 Copier</button>
 </div>
 </div>
