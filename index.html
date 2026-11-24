@@ -192,8 +192,8 @@ devtoolsOpen = false;
 
     
     <div style="margin-bottom:18px;">
-      <div style="font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:7px;">Identifiant</div>
-      <input id="login-user" type="text" placeholder="Votre identifiant" autocomplete="username"
+      <div style="font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:7px;">Email</div>
+      <input id="login-user" type="email" placeholder="votre.email@exemple.com" autocomplete="username"
         style="width:100%;padding:12px 14px;border-radius:9px;
           background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,215,0,0.15);
           color:#f0f0f8;font-family:'DM Sans',sans-serif;font-size:14px;outline:none;
@@ -223,7 +223,7 @@ devtoolsOpen = false;
       background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);
       border-radius:8px;font-size:12px;color:#ff8888;font-family:'DM Sans',sans-serif;
       text-align:center;
-    ">❌ Identifiant ou mot de passe incorrect.</div>
+    ">❌ Email ou mot de passe incorrect.</div>
 
     
     <button onclick="doLogin()" style="
@@ -2830,24 +2830,16 @@ console.log('[PWA] App installée !');
 // Comptes utilisateurs avec rôles. Le rôle détermine les droits dans l'application.
 // Rôles possibles : 'admin', 'teacher' (professeur), 'student' (élève), 'university' (étudiant université), 'grande_ecole' (étudiant grande école)
 // ===== AUTHENTIFICATION SUPABASE =====
-// Compte admin local (toujours disponible, ne dépend pas de Supabase)
-const ADMIN_ACCOUNTS = {
-  'admin': {pass:'BritonScience2025!', name:'Administrateur'}
-};
+// Le rôle ADMIN est désormais vérifié par Supabase (colonne role='admin' du profil).
+// Aucun mot de passe n'est plus écrit dans ce fichier.
 const SESSION_KEY = 'bs_session';
 window.CURRENT_PROFILE = null;
 
 // Vérifie s'il existe une session admin locale
 function checkAdminSession(){
-  try{
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if(!raw) return false;
-    const sess = JSON.parse(raw);
-    if(sess.role==='admin' && Date.now() < sess.expires){
-      window.CURRENT_ROLE='admin'; window.CURRENT_USER=sess.user; window.CURRENT_NAME=sess.name||'Administrateur';
-      return true;
-    }
-  }catch(e){}
+  // L'accès admin passe uniquement par un compte Supabase avec role='admin'.
+  // On efface toute ancienne session admin locale encore présente dans le navigateur.
+  try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
   return false;
 }
 
@@ -2923,6 +2915,12 @@ function applyProfileToApp(profile){
   window.CURRENT_NAME = profile.full_name || profile.email || '';
   window.CURRENT_USER = profile.email;
   // Rôle applicatif
+  if(profile.role==='admin'){
+    // Administrateur (rôle attribué uniquement depuis Supabase) : accès complet, aucun niveau imposé
+    window.CURRENT_ROLE='admin'; window.CURRENT_NAME=profile.full_name||'Administrateur';
+    S.forceCycle=null; window.STUDENT_CYCLES=null; S.eduLevel='';
+    return;
+  }
   if(profile.role==='teacher'){ window.CURRENT_ROLE='teacher'; }
   else if(profile.niveau==='superieur'){ window.CURRENT_ROLE = profile.role==='grande_ecole'?'grande_ecole':'university'; }
   else { window.CURRENT_ROLE='student'; }
@@ -2947,13 +2945,6 @@ async function doLogin(){
   const pass = document.getElementById('login-pass')?.value || '';
   const err = document.getElementById('login-error');
   if(!email || !pass){ if(err){ err.style.display='block'; err.textContent='⚠️ Veuillez remplir tous les champs.'; } return; }
-
-  // Admin local (accès complet, sans Supabase)
-  if(ADMIN_ACCOUNTS[email] && ADMIN_ACCOUNTS[email].pass===pass){
-    window.CURRENT_ROLE='admin'; window.CURRENT_USER=email; window.CURRENT_NAME='Administrateur';
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({user:email,role:'admin',name:'Administrateur',expires:Date.now()+24*60*60*1000}));
-    closeLoginOverlay(); S.role=null; render(); return;
-  }
 
   if(!supa){ if(err){ err.style.display='block'; err.textContent='⚠️ Service indisponible, réessayez dans un instant.'; } return; }
   if(err){ err.style.display='block'; err.style.color='#FFD700'; err.textContent='⏳ Connexion en cours…'; }
@@ -3003,7 +2994,7 @@ async function doLogin(){
     else { window.CURRENT_ROLE='student'; window.CURRENT_USER=email; window.CURRENT_PROFILE=null; }
     closeLoginOverlay(); S.role=null; render();
     // Si l'accès gratuit / abonnement est déjà expiré, proposer le paiement
-    if(prof){ const acc=accessActive(prof); if(!acc.active) showAccessExpired(); }
+    if(prof && prof.role!=='admin'){ const acc=accessActive(prof); if(!acc.active) showAccessExpired(); }
   }catch(e){
     if(err){
       err.style.display='block'; err.style.color='#ff8888';
@@ -3578,14 +3569,14 @@ window.addEventListener('DOMContentLoaded', async ()=>{
           applyProfileToApp(prof);
           closeLoginOverlay();
           if(typeof render==='function') render();
-          if(!acc.active){ showAccessExpired(); }
+          if(!acc.active && prof.role!=='admin'){ showAccessExpired(); }
           return;
         }
       }
     }catch(e){ console.error(e); }
   }
-  // 2) Sinon seulement, vérifier une session admin locale
-  if(checkAdminSession()){ closeLoginOverlay(); if(typeof render==='function') render(); return; }
+  // 2) Nettoyer toute ancienne session admin locale (plus utilisée)
+  checkAdminSession();
   // 3) Sinon, l'écran de connexion reste affiché
 });</script>
 </body>
