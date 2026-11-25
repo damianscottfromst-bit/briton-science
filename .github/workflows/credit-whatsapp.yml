@@ -1,0 +1,140 @@
+# BRITON SCIENCE — Message WhatsApp chaque matin avec le crédit API restant
+# Tourne tout seul chaque jour à 07 h 41 (heure d'Abidjan).
+# Secrets à créer dans GitHub (Settings > Secrets and variables > Actions) :
+#   ANTHROPIC_ADMIN_KEY  : clé d'administration Claude (commence par sk-ant-admin01-)
+#   CREDIT_SOLDE_USD     : solde affiché dans la console Claude le jour du relevé (ex : 18.40)
+#   CREDIT_DATE          : date de ce relevé, format AAAA-MM-JJ (ex : 2026-11-25)
+#   WHATSAPP_NUMERO      : votre numéro WhatsApp avec l'indicatif (ex : +2250758405178)
+#   CALLMEBOT_APIKEY     : code reçu de CallMeBot sur WhatsApp
+#   (facultatif) SEUIL_ALERTE_USD : seuil d'alerte en dollars (5 par défaut)
+#   (facultatif) TAUX_FCFA        : 1 dollar en FCFA (600 par défaut)
+name: Crédit API sur WhatsApp (Briton Science)
+
+on:
+  schedule:
+    - cron: '41 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  credit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Calculer le crédit restant et l'envoyer sur WhatsApp
+        env:
+          ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
+          CREDIT_SOLDE_USD: ${{ secrets.CREDIT_SOLDE_USD }}
+          CREDIT_DATE: ${{ secrets.CREDIT_DATE }}
+          WHATSAPP_NUMERO: ${{ secrets.WHATSAPP_NUMERO }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          SEUIL_ALERTE_USD: ${{ secrets.SEUIL_ALERTE_USD }}
+          TAUX_FCFA: ${{ secrets.TAUX_FCFA }}
+        run: |
+          node --input-type=module <<'SCRIPT'
+          // BRITON SCIENCE — Message WhatsApp quotidien : crédit API restant (estimation)
+          // Solde estimé = solde relevé dans la console Claude (CREDIT_SOLDE_USD, à la date CREDIT_DATE)
+          //                − dépenses facturées depuis cette date (API « Cost Report » d'Anthropic).
+          const env = process.env;
+          const ADMIN_KEY = (env.ANTHROPIC_ADMIN_KEY || '').trim();
+          const SOLDE_RELEVE = parseFloat(String(env.CREDIT_SOLDE_USD || '').replace(',', '.').replace(/[^0-9.]/g, ''));
+          const DATE_RELEVE = String(env.CREDIT_DATE || '').trim();
+          const TELEPHONE = String(env.WHATSAPP_NUMERO || '').replace(/[^0-9+]/g, '');
+          const CALLMEBOT_KEY = String(env.CALLMEBOT_APIKEY || '').trim();
+          const SEUIL = parseFloat(String(env.SEUIL_ALERTE_USD || '5').replace(',', '.')) || 5;
+          const TAUX = parseFloat(String(env.TAUX_FCFA || '600').replace(',', '.')) || 600;
+
+          const usd = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' $';
+          const fcfa = n => Math.round(n * TAUX).toLocaleString('fr-FR').replace(/ | /g, ' ') + ' FCFA';
+          const jour = d => d.toISOString().slice(0, 10);
+
+          async function envoyerWhatsApp(texte) {
+            const url = 'https://api.callmebot.com/whatsapp.php?phone=' + encodeURIComponent(TELEPHONE)
+              + '&text=' + encodeURIComponent(texte) + '&apikey=' + encodeURIComponent(CALLMEBOT_KEY);
+            const r = await fetch(url);
+            const corps = await r.text();
+            if (!r.ok || /apikey is invalid|invalid api ?key|wrong (api)?key|not active|phone number is not/i.test(corps.slice(0, 3000))) {
+              throw new Error('Envoi WhatsApp refusé (code ' + r.status + '). Vérifiez WHATSAPP_NUMERO et CALLMEBOT_APIKEY.');
+            }
+          }
+
+          async function coutsParJour(debutISO, finISO) {
+            const parJour = {};
+            let page = null, tours = 0;
+            do {
+              const u = new URL('https://api.anthropic.com/v1/organizations/cost_report');
+              u.searchParams.set('starting_at', debutISO);
+              u.searchParams.set('ending_at', finISO);
+              u.searchParams.set('bucket_width', '1d');
+              u.searchParams.set('limit', '31');
+              if (page) u.searchParams.set('page', page);
+              const r = await fetch(u, { headers: { 'x-api-key': ADMIN_KEY, 'anthropic-version': '2023-06-01', 'user-agent': 'BritonScience-credit/1.0' } });
+              if (!r.ok) {
+                if (r.status === 401 || r.status === 403) throw new Error('Clé d\'administration refusée (code ' + r.status + '). Vérifiez ANTHROPIC_ADMIN_KEY.');
+                throw new Error('Rapport de coûts indisponible (code ' + r.status + ').');
+              }
+              const j = await r.json();
+              for (const b of j.data || []) {
+                let cents = 0;
+                for (const x of b.results || []) cents += parseFloat(x.amount) || 0;
+                const k = String(b.starting_at).slice(0, 10);
+                parJour[k] = (parJour[k] || 0) + cents / 100;
+              }
+              page = j.has_more ? j.next_page : null;
+            } while (page && ++tours < 50);
+            return parJour;
+          }
+
+          async function main() {
+            const manque = [];
+            if (!ADMIN_KEY) manque.push('ANTHROPIC_ADMIN_KEY');
+            if (!(SOLDE_RELEVE >= 0)) manque.push('CREDIT_SOLDE_USD');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(DATE_RELEVE)) manque.push('CREDIT_DATE (format AAAA-MM-JJ)');
+            if (!TELEPHONE) manque.push('WHATSAPP_NUMERO');
+            if (!CALLMEBOT_KEY) manque.push('CALLMEBOT_APIKEY');
+            if (manque.length) throw new Error('Secrets manquants ou incorrects : ' + manque.join(', '));
+
+            const maintenant = new Date();
+            const demain = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), maintenant.getUTCDate() + 1));
+            const aujourdhui = jour(maintenant);
+            const hier = jour(new Date(demain.getTime() - 2 * 86400000));
+
+            let texte, alerte = false;
+            try {
+              const parJour = await coutsParJour(DATE_RELEVE + 'T00:00:00Z', demain.toISOString().replace('.000', ''));
+              const depense = Object.values(parJour).reduce((a, b) => a + b, 0);
+              const solde = SOLDE_RELEVE - depense;
+              // Moyenne des 7 derniers jours complets (sans aujourd'hui) depuis le relevé
+              const jours = Object.keys(parJour).filter(k => k < aujourdhui).sort().slice(-7);
+              const moyenne = jours.length ? jours.reduce((a, k) => a + parJour[k], 0) / jours.length : 0;
+              const restants = moyenne > 0 ? Math.floor(Math.max(solde, 0) / moyenne) : null;
+              alerte = solde < SEUIL;
+              const lignes = [
+                '*Briton Science – Crédit API* 🤖',
+                '💰 Solde estimé : *' + usd(solde) + '* (≈ ' + fcfa(Math.max(solde, 0)) + ')',
+                '📉 Dépensé hier : ' + usd(parJour[hier] || 0) + ' · aujourd\'hui : ' + usd(parJour[aujourdhui] || 0),
+                moyenne > 0 ? '📊 Moyenne : ' + usd(moyenne) + '/jour → environ ' + restants + ' jour' + (restants > 1 ? 's' : '') + ' restant' + (restants > 1 ? 's' : '') : '📊 Pas encore de dépense mesurée depuis le ' + DATE_RELEVE,
+                alerte ? '⚠️ *Crédit bas* (moins de ' + usd(SEUIL) + ') : rechargez sur platform.claude.com/settings/billing puis mettez à jour CREDIT_SOLDE_USD et CREDIT_DATE.'
+                       : '✅ Tout va bien.',
+              ];
+              texte = lignes.join('\n');
+            } catch (e) {
+              alerte = true;
+              texte = '*Briton Science – Crédit API* 🤖\n⚠️ Impossible de lire le crédit aujourd\'hui : ' + e.message + '\nVérifiez le solde sur platform.claude.com/settings/billing';
+            }
+            await envoyerWhatsApp(texte);
+            console.log('Message WhatsApp envoyé' + (alerte ? ' (avec alerte).' : '.'));
+            // En cas d'alerte, GitHub vous envoie aussi un e-mail (exécution en échec)
+            if (alerte) process.exitCode = 1;
+          }
+
+          main().catch(e => { console.error('ÉCHEC : ' + e.message); process.exitCode = 1; });
+          SCRIPT
+
+      - name: Garder ce programme actif (règle GitHub des 60 jours)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/credit-whatsapp.yml/enable" || true
