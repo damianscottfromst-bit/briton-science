@@ -88,10 +88,26 @@ function getDeviceFingerprint(){
     return 'fp_unknown';
   }
 }
+// ===== RÉGLAGES COMMERCIAUX (tout se modifie ici, en un seul endroit) =====
+const TRIAL_DAYS = 3;                 // durée de l'essai gratuit, en jours (démarre à la 1re connexion)
+const TRIAL_DAILY_LIMIT = 4;          // cours / exercices / corrections par jour pendant l'essai
+const PAID_DAILY_LIMIT = {base:5, avance:8, teacher:15}; // limite par jour avec une formule payante
+const STUDENT_PRICES = {              // tarifs élèves et étudiants (FCFA)
+  base:   {day:150, week:500, month:1500},  // Primaire et Collège
+  avance: {day:200, week:700, month:2000}   // Lycée et Supérieur
+};
+const DEFAULT_MODEL = 'claude-sonnet-5-5';  // modèle IA utilisé pour tous les utilisateurs
+const TEST_MODELS = {'claude-sonnet-5-5':'Sonnet 5.5 (actuel)','claude-sonnet-4-6':'Sonnet 4.6 (ancien)','claude-haiku-5-5':'Haiku 5.5 (économique)'};
+// Les modèles récents comptent environ 30 % de jetons en plus pour le même texte : on agrandit la limite de longueur
+function scaleTokens(n){ return /5-5$/.test(getModel()) ? Math.ceil(n*1.3) : n; }
+function getModel(){
+  if(window.CURRENT_ROLE==='admin' && window.ADMIN_MODEL && TEST_MODELS[window.ADMIN_MODEL]) return window.ADMIN_MODEL;
+  return DEFAULT_MODEL;
+}
 // Vérifie l'appareil et renvoie la date d'expiration de l'essai gratuit.
-// Nouvel appareil -> 2h gratuites. Appareil ayant déjà eu son essai -> aucune (doit payer).
+// Nouvel appareil -> TRIAL_DAYS jours gratuits. Appareil ayant déjà eu son essai -> aucun (doit payer).
 async function computeTrialExpiry(email){
-  const now2h = new Date(Date.now()+2*60*60*1000).toISOString();
+  const now2h = new Date(Date.now()+TRIAL_DAYS*86400000).toISOString();
   const expired = new Date(Date.now()-1000).toISOString(); // déjà expiré = pas d'accès gratuit
   try{
     if(!supa) return now2h;
@@ -101,6 +117,60 @@ async function computeTrialExpiry(email){
     // data = true si nouvel appareil (essai accordé), false si appareil déjà connu
     return data ? now2h : expired;
   }catch(e){ console.warn('anti-fraude erreur', e); return now2h; }
+}
+// Démarre l'essai gratuit à la PREMIÈRE connexion (et non à l'inscription), avec le contrôle anti-fraude
+async function ensureTrialStarted(prof, email){
+  try{
+    if(!prof || !supa || prof.role==='admin') return prof;
+    if(prof.temp_access_expires_at) return prof;                       // essai déjà démarré
+    if(prof.plan && prof.plan!=='free' && prof.plan_expires_at) return prof; // déjà abonné
+    const exp = (prof.role==='teacher')
+      ? new Date(Date.now()+TRIAL_DAYS*86400000).toISOString()
+      : await computeTrialExpiry(email||prof.email);
+    const {error} = await supa.from('profiles').update({temp_access_expires_at:exp, updated_at:new Date().toISOString()}).eq('id', prof.id);
+    if(error){ console.warn('essai:', error.message); return prof; }
+    prof.temp_access_expires_at = exp;
+  }catch(e){ console.warn('essai', e); }
+  return prof;
+}
+// Limite quotidienne selon la situation (essai ou formule payante)
+function planStatus(p){
+  const paid = !!(p && p.plan && p.plan!=='free' && p.plan_expires_at && new Date(p.plan_expires_at).getTime()>Date.now());
+  let limit = TRIAL_DAILY_LIMIT;
+  if(paid){
+    if(p.role==='teacher') limit = PAID_DAILY_LIMIT.teacher;
+    else limit = (p.niveau==='primaire'||p.niveau==='college') ? PAID_DAILY_LIMIT.base : PAID_DAILY_LIMIT.avance;
+  }
+  return {paid, limit};
+}
+// Vérifie qu'il reste des générations aujourd'hui (l'admin n'a pas de limite)
+async function usageAllowed(){
+  if(window.CURRENT_ROLE==='admin' || !supa || !window.CURRENT_PROFILE) return true;
+  const p = window.CURRENT_PROFILE, st = planStatus(p);
+  try{
+    const today = new Date().toISOString().slice(0,10);
+    const {data} = await supa.from('usage_daily').select('generations').eq('user_id', p.id).eq('day', today).maybeSingle();
+    const used = data ? data.generations : 0;
+    if(used >= st.limit){ showQuotaReached(st.limit, st.paid); return false; }
+  }catch(e){ console.warn('quota', e); }
+  return true;
+}
+// Compte une génération réussie (compteur côté Supabase)
+async function countUsage(){
+  if(window.CURRENT_ROLE==='admin' || !supa || !window.CURRENT_PROFILE) return;
+  try{ await supa.rpc('increment_usage'); }catch(e){ console.warn('compteur', e); }
+}
+function showQuotaReached(limit, paid){
+  let ov=document.getElementById('quota-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='quota-overlay'; ov.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;font-family:DM Sans,sans-serif;padding:20px;'; document.body.appendChild(ov); }
+  ov.innerHTML='<div style="max-width:400px;width:100%;background:#0c0c22;border:1px solid rgba(255,215,0,0.3);border-radius:16px;padding:28px 24px;text-align:center;">'
+    +'<div style="font-size:40px;margin-bottom:8px;">📚</div>'
+    +'<div style="font-family:Cinzel,serif;font-size:17px;color:#FFD700;font-weight:700;margin-bottom:10px;">Limite du jour atteinte</div>'
+    +'<div style="font-size:13px;color:#ccc;line-height:1.7;margin-bottom:18px;">Vous avez utilisé vos '+limit+' générations d\'aujourd\'hui'
+    +(paid?'. Revenez demain pour continuer.':' pendant l\'essai gratuit. Revenez demain, ou choisissez une formule pour en avoir davantage.')+'</div>'
+    +(paid?'':'<button onclick="document.getElementById(\'quota-overlay\').style.display=\'none\';showAccessExpired()" style="width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#1DC3A6,#19E89C);color:#04231c;font-weight:700;cursor:pointer;margin-bottom:8px;">💳 Voir les formules</button>')
+    +'<button onclick="document.getElementById(\'quota-overlay\').style.display=\'none\'" style="width:100%;padding:11px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:transparent;color:#999;cursor:pointer;">Fermer</button></div>';
+  ov.style.display='flex';
 }
 </script>
 <style>:root{--gold:#FFD700;--gold-light:#FFF0A0;--gold-deep:#B8860B;--gold-dark:#8B6914; --ink:#07071a;--ink-mid:#0f0f28;--ink-soft:#1a1a38; --cream:#f8f3e8;--text-muted:#9990cc;--accent:#2EC4B6} *{box-sizing:border-box;margin:0;padding:0} html{scroll-behavior:smooth} body{background:var(--ink);color:var(--cream);font-family:'DM Sans',sans-serif;overflow-x:hidden} ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-track{background:var(--ink)} ::-webkit-scrollbar-thumb{background:var(--gold-deep);border-radius:3px} @keyframes fadeUp{from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} } @keyframes fadeIn{from{opacity:0} to{opacity:1} } @keyframes shimmerGold{0%{background-position:-200% center} 100%{background-position:200% center} } @keyframes float{0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} } @keyframes rotateSlow{from{transform:rotate(0deg)} to{transform:rotate(360deg)} } @keyframes glowPulse{0%,100%{filter:drop-shadow(0 0 6px rgba(255,215,0,0.4))} 50%{filter:drop-shadow(0 0 18px rgba(255,215,0,0.8))} } @keyframes particleFloat{0%{transform:translateY(0) translateX(0);opacity:0} 20%{opacity:0.6} 100%{transform:translateY(-120px) translateX(30px);opacity:0} } @keyframes slideIn{from{opacity:0;transform:translateX(60px)} to{opacity:1;transform:translateX(0)} } @keyframes progressFill{from{width:0} to{width:var(--w)} } .gold-text{background:linear-gradient(120deg,var(--gold-dark) 0%,var(--gold) 30%,var(--gold-light) 50%,var(--gold) 70%,var(--gold-dark) 100%); background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; animation:shimmerGold 4s linear infinite} .cinzel{font-family:'Cinzel',serif} .reveal{opacity:0;transform:translateY(28px);transition:opacity 0.7s,transform 0.7s} .reveal.visible{opacity:1;transform:translateY(0)} .page{display:none;animation:fadeIn 0.4s ease both} .page.active{display:block} nav{position:fixed;top:0;left:0;right:0;z-index:999; display:flex;align-items:center;justify-content:space-between; padding:14px 40px; background:rgba(7,7,26,0.94);backdrop-filter:blur(16px); border-bottom:1px solid rgba(255,215,0,0.12)} .nav-logo{display:flex;align-items:center;gap:12px;cursor:pointer} .nav-logo-svg{width:42px;height:42px;animation:glowPulse 3s ease infinite} .nav-brand{font-family:'Cinzel',serif;font-size:14px;font-weight:700;letter-spacing:1.5px} .nav-brand small{display:block;font-size:9px;letter-spacing:2px;color:var(--text-muted);font-weight:400;margin-top:1px} .nav-links{display:flex;gap:28px;list-style:none;align-items:center} .nav-links a{font-size:11px;letter-spacing:2px;color:rgba(248,243,232,0.65);text-decoration:none;text-transform:uppercase;font-family:'Cinzel',serif;transition:color 0.2s;cursor:pointer} .nav-links a:hover,.nav-links a.active-link{color:var(--gold)} .nav-cta{padding:9px 22px;background:linear-gradient(135deg,var(--gold-deep),var(--gold)); color:var(--ink);border:none;font-family:'Cinzel',serif;font-weight:700; font-size:10px;letter-spacing:2px;cursor:pointer; clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%); transition:all 0.2s;text-transform:uppercase} .nav-cta:hover{box-shadow:0 6px 20px rgba(255,215,0,0.3);transform:translateY(-1px)} .nav-cta.secondary{background:transparent;border:1px solid rgba(255,215,0,0.35);color:var(--gold);clip-path:none} .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center; padding:120px 24px 80px;position:relative;overflow:hidden;text-align:center} .hero-bg{position:absolute;inset:0; background:radial-gradient(ellipse 60% 50% at 50% 40%,rgba(255,215,0,0.06) 0%,transparent 70%),radial-gradient(ellipse 30% 40% at 80% 70%,rgba(46,196,182,0.04) 0%,transparent 60%),linear-gradient(180deg,#07071a 0%,#0c0c22 100%)} .hero-grid{position:absolute;inset:0; background-image:linear-gradient(rgba(255,215,0,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,215,0,0.03) 1px,transparent 1px); background-size:60px 60px; mask-image:radial-gradient(ellipse 80% 80% at 50% 40%,black 40%,transparent 80%)} .ring{position:absolute;border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%)} .ring1{width:600px;height:600px;border:1px solid rgba(255,215,0,0.06);animation:rotateSlow 40s linear infinite} .ring2{width:820px;height:820px;border:1px dashed rgba(255,215,0,0.04);animation:rotateSlow 65s linear infinite reverse} .hero-logo{width:170px;height:170px;animation:float 5s ease-in-out infinite,glowPulse 3s ease infinite;margin-bottom:24px;position:relative;z-index:2} .hero-eyebrow{font-family:'Cinzel',serif;font-size:10px;letter-spacing:5px;color:var(--gold-deep);text-transform:uppercase;margin-bottom:18px;position:relative;z-index:2;display:flex;align-items:center;gap:14px;justify-content:center} .hero-eyebrow::before,.hero-eyebrow::after{content:'';display:block;width:36px;height:1px;background:linear-gradient(90deg,transparent,var(--gold-deep))} .hero-eyebrow::after{background:linear-gradient(90deg,var(--gold-deep),transparent)} .hero-title{font-family:'Cinzel',serif;font-size:clamp(34px,5.5vw,68px);font-weight:900;line-height:1.05;margin-bottom:12px;position:relative;z-index:2;animation:fadeUp 0.8s 0.3s both} .hero-subtitle{font-family:'Cormorant Garamond',serif;font-size:clamp(17px,2.2vw,24px);font-style:italic;color:rgba(248,243,232,0.55);margin-bottom:32px;font-weight:300;position:relative;z-index:2;animation:fadeUp 0.8s 0.45s both} .hero-desc{max-width:540px;font-size:14px;color:rgba(248,243,232,0.5);line-height:1.85;margin-bottom:40px;position:relative;z-index:2;animation:fadeUp 0.8s 0.6s both} .hero-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;position:relative;z-index:2;animation:fadeUp 0.8s 0.75s both} .btn-primary{padding:15px 36px;background:linear-gradient(135deg,var(--gold-deep) 0%,var(--gold) 50%,var(--gold-deep) 100%);background-size:200%;color:var(--ink);border:none;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;text-transform:uppercase;clip-path:polygon(12px 0,100% 0,calc(100% - 12px) 100%,0 100%);transition:all 0.3s} .btn-primary:hover{box-shadow:0 8px 30px rgba(255,215,0,0.35);transform:translateY(-2px)} .btn-secondary{padding:14px 36px;background:transparent;border:1px solid rgba(255,215,0,0.35);color:var(--gold);font-family:'Cinzel',serif;font-size:11px;letter-spacing:2px;cursor:pointer;text-transform:uppercase;transition:all 0.3s;clip-path:polygon(12px 0,100% 0,calc(100% - 12px) 100%,0 100%)} .btn-secondary:hover{background:rgba(255,215,0,0.08);transform:translateY(-2px)} .particles{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden} .particle{position:absolute;background:var(--gold);border-radius:50%;animation:particleFloat 6s ease-in infinite;opacity:0} .wrap{max-width:1100px;margin:0 auto;padding:0 32px} .sec{padding:90px 32px;max-width:1100px;margin:0 auto} .sec-eye{font-family:'Cinzel',serif;font-size:10px;letter-spacing:5px;color:var(--gold-deep);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:12px} .sec-eye::after{content:'';display:block;width:28px;height:1px;background:var(--gold-deep)} .sec-title{font-family:'Cinzel',serif;font-size:clamp(26px,3.5vw,44px);font-weight:700;line-height:1.15;margin-bottom:18px} .sec-body{font-size:14px;color:rgba(248,243,232,0.5);line-height:1.85;max-width:520px} .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:52px} .feat{background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.1);padding:30px 24px;position:relative;overflow:hidden;transition:all 0.3s;cursor:default} .feat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold-deep),transparent);opacity:0;transition:opacity 0.3s} .feat:hover{border-color:rgba(255,215,0,0.3);transform:translateY(-4px);box-shadow:0 16px 40px rgba(0,0,0,0.4)} .feat:hover::before{opacity:1} .feat-icon{font-size:28px;margin-bottom:16px} .feat-title{font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--gold);margin-bottom:10px;letter-spacing:1px} .feat-body{font-size:12px;color:rgba(248,243,232,0.48);line-height:1.75} .stats-bar{background:linear-gradient(135deg,#0c0c22,#111130);border-top:1px solid rgba(255,215,0,0.12);border-bottom:1px solid rgba(255,215,0,0.12);padding:44px 32px} .stats-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:16px} .stat-item{text-align:center;padding:18px} .stat-num{font-family:'Cinzel',serif;font-size:38px;font-weight:900;line-height:1;margin-bottom:7px} .stat-label{font-size:10px;letter-spacing:3px;color:var(--text-muted);text-transform:uppercase} .stat-div{width:28px;height:2px;background:var(--gold-deep);margin:8px auto 0} .lvl-bg{background:linear-gradient(180deg,var(--ink) 0%,#0a0a20 50%,var(--ink) 100%);padding:90px 32px} .lvl-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:50px;max-width:1100px;margin-left:auto;margin-right:auto} .lvl-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.1);padding:24px 14px;text-align:center;transition:all 0.3s;cursor:default;position:relative} .lvl-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--c,var(--gold-deep));transform:scaleX(0);transition:transform 0.3s;transform-origin:center} .lvl-card:hover{border-color:rgba(255,215,0,0.3);background:rgba(255,215,0,0.04);transform:translateY(-4px)} .lvl-card:hover::after{transform:scaleX(1)} .lvl-emoji{font-size:26px;margin-bottom:10px;display:block} .lvl-name{font-family:'Cinzel',serif;font-size:11px;font-weight:700;color:var(--gold);letter-spacing:1px;margin-bottom:7px} .lvl-cls{font-size:10px;color:var(--text-muted);line-height:1.65} .how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:54px;position:relative} .how-grid::before{content:'';position:absolute;top:43px;left:16%;right:16%;height:1px;background:linear-gradient(90deg,transparent,var(--gold-deep),transparent)} .how-step{text-align:center;padding:0 20px} .how-num{width:86px;height:86px;margin:0 auto 22px;border-radius:50%;background:var(--ink-soft);border:1.5px solid rgba(255,215,0,0.25);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:24px;font-weight:900;color:var(--gold);position:relative;z-index:1;transition:all 0.3s} .how-step:hover .how-num{border-color:var(--gold);box-shadow:0 0 24px rgba(255,215,0,0.25)} .how-title{font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--gold);margin-bottom:9px;letter-spacing:1px} .how-body{font-size:12px;color:rgba(248,243,232,0.48);line-height:1.75} .cta-band{background:linear-gradient(135deg,#0c0c20,#0f0f28);border-top:1px solid rgba(255,215,0,0.1);border-bottom:1px solid rgba(255,215,0,0.1);padding:90px 32px;text-align:center;position:relative;overflow:hidden} .cta-band::before{content:'';position:absolute;width:500px;height:500px;border:1px solid rgba(255,215,0,0.05);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%)} footer{background:var(--ink);border-top:1px solid rgba(255,215,0,0.1);padding:54px 32px 28px} .ft-inner{max-width:1100px;margin:0 auto} .ft-top{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:36px;margin-bottom:44px} .ft-brand{font-family:'Cinzel',serif;font-size:17px;font-weight:900;margin-bottom:12px} .ft-tag{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:14px;color:var(--text-muted);line-height:1.65;margin-bottom:18px} .ft-col-title{font-family:'Cinzel',serif;font-size:10px;font-weight:700;letter-spacing:3px;color:var(--gold-deep);text-transform:uppercase;margin-bottom:14px} .ft-col a{display:block;font-size:12px;color:rgba(248,243,232,0.4);text-decoration:none;margin-bottom:8px;transition:color 0.2s;cursor:pointer} .ft-col a:hover{color:var(--gold)} .ft-bottom{border-top:1px solid rgba(255,215,0,0.08);padding-top:22px;display:flex;justify-content:space-between;align-items:center} .ft-copy{font-size:10px;color:rgba(248,243,232,0.28);letter-spacing:1px} .app-page{background:linear-gradient(135deg,#0d0d1a 0%,#111128 50%,#0d1f2d 100%);min-height:100vh;padding-top:80px} .app-inner{max-width:840px;margin:0 auto;padding:28px 18px 60px} .role-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:32px} .role-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:28px 22px;text-align:center;cursor:pointer;transition:all 0.22s} .role-card:hover{transform:scale(1.03);border-color:rgba(255,215,0,0.3)} .role-emoji{font-size:42px;margin-bottom:12px} .role-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;margin-bottom:7px} .role-desc{font-size:12px;color:rgba(248,243,232,0.5);line-height:1.65} .role-badge{margin-top:16px;padding:6px 18px;border-radius:7px;font-size:11px;display:inline-block;font-family:'Cinzel',serif} .app-tabs{display:flex;gap:5px;background:rgba(255,255,255,0.04);border-radius:11px;padding:5px;margin-bottom:22px} .app-tab{flex:1;padding:9px 0;border-radius:8px;border:none;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;transition:all 0.2s} .app-tab.active{background:rgba(108,99,255,0.35);color:#c0b8ff;font-weight:700;border-bottom:2px solid #6C63FF} .app-tab:not(.active){background:transparent;color:#888;border-bottom:2px solid transparent} .app-tab:not(.active):hover{background:rgba(108,99,255,0.1);color:#aaa} .cycle-row{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:18px} .cycle-btn{padding:8px 15px;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;transition:all 0.18s} .sublevel-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px;animation:fadeUp 0.3s ease both} .sublevel-btn{padding:6px 13px;border-radius:7px;font-family:'DM Sans',sans-serif;font-size:11px;cursor:pointer;transition:all 0.15s} .subj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:18px} .subj-btn{padding:12px 9px;border-radius:11px;font-family:'DM Sans',sans-serif;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;transition:all 0.18s} .subj-btn:hover{transform:scale(1.04)} .subj-icon{font-size:19px} .app-input{width:100%;padding:11px 14px;border-radius:9px;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,255,255,0.1);color:#f0f0f8;font-family:'DM Sans',sans-serif;font-size:13px;transition:border-color 0.2s;outline:none;margin-bottom:16px} .app-input:focus{border-color:#6C63FF;box-shadow:0 0 0 3px rgba(108,99,255,0.15)} .app-textarea{width:100%;padding:12px 13px;border-radius:9px;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.1);color:#f0f0f8;font-family:'DM Mono',monospace;font-size:12px;resize:vertical;line-height:1.7;outline:none;transition:border-color 0.2s} .app-textarea:focus{border-color:#6C63FF;box-shadow:0 0 0 3px rgba(108,99,255,0.15)} .action-btn{width:100%;padding:13px;border-radius:11px;border:none;font-family:'Cinzel',serif;font-size:13px;font-weight:700;cursor:pointer;transition:all 0.22s;margin-bottom:20px;letter-spacing:1px} .action-btn:hover:not(:disabled){transform:translateY(-1px)} .action-btn:disabled{cursor:not-allowed;opacity:0.55} .result-box{background:rgba(255,255,255,0.04);border-radius:13px;padding:20px 18px;animation:fadeUp 0.4s ease both;margin-bottom:20px} .result-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;font-family:'Cinzel',serif} .result-content{white-space:normal;font-family:'DM Sans',sans-serif;font-size:13.5px;line-height:1.9;color:#d8d8ea} .result-content h1,.result-content h2,.result-content h3{line-height:1.4} .prog-bar-wrap{background:rgba(255,255,255,0.06);border-radius:100px;height:5px;overflow:hidden;margin-top:6px} .prog-bar{height:100%;border-radius:100px;animation:progressFill 1.2s cubic-bezier(0.34,1.56,0.64,1) both} .stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px} .stat-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:11px;padding:16px} .stat-card-val{font-family:'Cinzel',serif;font-size:22px;font-weight:800;color:#6C63FF} .stat-card-label{font-size:10px;color:#888;margin-top:2px} .app-label{font-size:9px;color:#8888aa;letter-spacing:2px;text-transform:uppercase;margin-bottom:9px} .level-badge{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:7px;font-size:11px;margin-bottom:14px} @keyframes dot{0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} } .loading-dots span{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin:0 2px;animation:dot 1.2s infinite ease-in-out both} .loading-dots span:nth-child(1){animation-delay:-0.32s} .loading-dots span:nth-child(2){animation-delay:-0.16s} .back-btn{display:inline-flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);cursor:pointer;margin-bottom:24px;transition:color 0.2s;font-family:'Cinzel',serif;letter-spacing:1px;background:none;border:none} .back-btn:hover{color:var(--gold)} .correct-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px} .prog-subj{background:rgba(255,255,255,0.03);border-radius:11px;padding:14px 16px;border:1px solid rgba(255,255,255,0.06);margin-bottom:11px} .prog-subj-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px} .tip-box{padding:14px 16px;border-radius:11px;font-size:12px;line-height:1.7;margin-top:16px}
@@ -324,10 +394,10 @@ devtoolsOpen = false;
         <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Niveau où vous enseignez</label>
         <select id="reg-teachLevel" onchange="regTeachLevelChanged()" style="width:100%;padding:12px 14px;border-radius:9px;background:#15152e;border:1.5px solid rgba(255,215,0,0.15);color:#ffffff;font-size:14px;outline:none;margin-bottom:12px;">
           <option value="">— Choisir votre niveau d'enseignement —</option>
-          <option value="primaire">Instituteur (Primaire) — 3 000 FCFA/mois</option>
-          <option value="college_lycee">Professeur (Collège / Lycée) — 5 000 FCFA/mois</option>
-          <option value="grande_ecole">Professeur (Supérieur / Grande École) — 7 500 FCFA/mois</option>
-          <option value="universite">Professeur (Supérieur / Université) — 10 000 FCFA/mois</option>
+          <option value="primaire">Instituteur (Primaire)</option>
+          <option value="college_lycee">Professeur (Collège / Lycée)</option>
+          <option value="grande_ecole">Professeur (Supérieur / Grande École)</option>
+          <option value="universite">Professeur (Supérieur / Université)</option>
         </select>
         <div id="reg-teachPriceInfo" style="display:none;font-size:11px;color:#add4ff;background:rgba(90,170,255,0.1);border:1px solid rgba(90,170,255,0.3);border-radius:8px;padding:9px 12px;margin-bottom:12px;line-height:1.5;"></div>
         <label style="display:block;font-size:9px;letter-spacing:2px;color:#B8860B;text-transform:uppercase;margin-bottom:6px;">Pièce justificative</label>
@@ -1068,7 +1138,7 @@ try{
 const r=await fetch('/api/claude',{
 method:'POST',
 headers:{'Content-Type':'application/json'},
-body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system,messages})
+body:JSON.stringify({model:getModel(),max_tokens:scaleTokens(maxTokens),system,messages})
 });
 if(!r.ok){
 const err=await r.json().catch(()=>({}));
@@ -1133,7 +1203,7 @@ for(let i=0;i<4;i++){
 const r=await fetch('/api/claude',{
 method:'POST',
 headers:{'Content-Type':'application/json'},
-body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens,system,messages:convo})
+body:JSON.stringify({model:getModel(),max_tokens:scaleTokens(maxTokens),system,messages:convo})
 });
 if(!r.ok){
 const err=await r.json().catch(()=>({}));
@@ -2148,6 +2218,7 @@ const topBar = (window.CURRENT_ROLE==='admin')
 ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
 <button class="back-btn" style="margin:0;" onclick="S.role=null;S.cycle=null;S.sub=null;render()">${t('back')}</button>
 <button onclick="adminTestPayment()" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.35);color:#FFD700;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;">🧪 Tester le paiement Wave</button>
+<select onchange="window.ADMIN_MODEL=this.value" title="Modèle IA utilisé pour vos tests" style="background:#15152e;border:1px solid rgba(255,215,0,0.35);color:#FFD700;border-radius:7px;padding:5px 8px;font-size:11px;font-family:DM Sans,sans-serif;">${Object.entries(TEST_MODELS).map(([id,l])=>`<option value="${id}" ${getModel()===id?'selected':''}>🤖 ${l}</option>`).join('')}</select>
 </div>`
 : `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
 <span style="font-size:11px;color:#8888aa;font-family:'Cinzel',serif;letter-spacing:1px;">${roleLabel()==='Professeur'?'🏫':isHigherStudent()?'🎓':'🎒'} ${roleLabel()}</span>
@@ -2449,6 +2520,7 @@ if(window.CURRENT_ROLE!=='admin' && window.CURRENT_PROFILE){
   const acc = accessActive(window.CURRENT_PROFILE);
   if(!acc || !acc.active){ showAccessExpired(); return; }
 }
+if(!(await usageAllowed())) return;
 S.topic=document.getElementById('topic-input')?.value||S.topic;
 if(!S.cycle||!S.sub||!S.subject||!S.topic.trim())return;
 // mode = 'cours' ou 'exercice' (par défaut : exercice)
@@ -2529,11 +2601,18 @@ setApiBusy(false);
 if(S.generated && !S.generated.startsWith('❌') && !S.generated.startsWith('⏳')){
   const subjLabel = (findSubject(S.subject)?.label) || S.subject || 'Autre';
   trackActivity(isLesson?'cours':'exercice', subjLabel);
+  countUsage();
 }
 S.loading=false;render();
 }
 async function doCorrect(){
 if(S.loading)return;
+// Vérifier l'accès et la limite du jour (sauf admin)
+if(window.CURRENT_ROLE!=='admin' && window.CURRENT_PROFILE){
+  const acc = accessActive(window.CURRENT_PROFILE);
+  if(!acc || !acc.active){ showAccessExpired(); return; }
+}
+if(!(await usageAllowed())) return;
 const exVal=document.getElementById('ex-input')?.value||'';
 if(exVal&&!exVal.startsWith('[Fichier'))S.exerciseForCorrect=exVal;
 S.studentAnswer=document.getElementById('ans-input')?.value||S.studentAnswer;
@@ -2595,6 +2674,7 @@ if(S.correction && !S.correction.startsWith('❌') && !S.correction.startsWith('
     if(m){ scorePct = Math.round(parseFloat(m[1].replace(',','.'))/20*100); }
   }
   trackActivity('correction', subjLabel, scorePct);
+  countUsage();
 }
 S.loading=false;render();
 }
@@ -2892,16 +2972,16 @@ function buildAccessBanner(){
       return out+'<div style="background:linear-gradient(135deg,rgba(46,196,182,0.15),rgba(46,196,182,0.05));border:1px solid rgba(46,196,182,0.35);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#7ef0e8;display:flex;align-items:center;gap:8px;">⭐ <b>'+planName+'</b> actif — '+reste+' restant'+(days>1?'s':'')+'</div>';
     }
   }
-  // Fenêtre gratuite 2h
+  // Essai gratuit (en jours)
   if(p.temp_access_expires_at){
     const ms = new Date(p.temp_access_expires_at).getTime()-now;
     if(ms>0){
       const totalMin = Math.floor(ms/60000);
-      const h = Math.floor(totalMin/60), m = totalMin%60;
-      const reste = h>0 ? h+'h'+(m<10?'0':'')+m : m+' min';
+      const d = Math.floor(totalMin/1440), h = Math.floor((totalMin%1440)/60), m = totalMin%60;
+      const reste = d>0 ? d+' j '+h+' h' : (h>0 ? h+'h'+(m<10?'0':'')+m : m+' min');
       const btnLabel = window.CURRENT_ROLE==='teacher' ? 'M\'abonner' : 'Passer Pro';
       return out+'<div style="background:linear-gradient(135deg,rgba(255,215,0,0.13),rgba(255,215,0,0.04));border:1px solid rgba(255,215,0,0.3);border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:#FFD700;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
-        +'<span>🎁 Accès gratuit — <b>'+reste+'</b> restant</span>'
+        +'<span>🎁 Essai gratuit — <b>'+reste+'</b> restant(s) · '+TRIAL_DAILY_LIMIT+' générations/jour</span>'
         +'<button onclick="showAccessExpired()" style="background:linear-gradient(135deg,#B8860B,#FFD700);color:#07071a;border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;">'+btnLabel+'</button>'
         +'</div>';
     }
@@ -2971,10 +3051,6 @@ async function doLogin(){
           if(!upErr){ idPhotoUrl = path; window.PENDING_TEACHER_PHOTO=null; }
         }catch(ep){ console.warn('upload pièce diff', ep); }
       }
-      // Anti-fraude : vérifier l'appareil pour décider de l'accès gratuit (uniquement pour les élèves/étudiants)
-      let tempExpiry;
-      if(meta.role==='teacher'){ tempExpiry = new Date(Date.now()+2*60*60*1000).toISOString(); }
-      else { tempExpiry = await computeTrialExpiry(email); }
       const pdata = {
         id: uid, email: email,
         full_name: meta.full_name||'', role: meta.role, age: meta.age||null, niveau: meta.niveau||null,
@@ -2982,7 +3058,7 @@ async function doLogin(){
         id_photo_path: idPhotoUrl,
         teacher_verified: false,
         teacher_level: meta.teacher_level||null,
-        temp_access_expires_at: (prof && prof.temp_access_expires_at) ? prof.temp_access_expires_at : tempExpiry,
+        temp_access_expires_at: (prof && prof.temp_access_expires_at) ? prof.temp_access_expires_at : null,
         updated_at: new Date().toISOString()
       };
       let {error:pErr} = await supa.from('profiles').upsert(pdata, {onConflict:'id'});
@@ -2990,7 +3066,7 @@ async function doLogin(){
       const r = await supa.from('profiles').select('*').eq('id', uid).maybeSingle();
       prof = r.data;
     }
-    if(prof){ applyProfileToApp(prof); }
+    if(prof){ prof = await ensureTrialStarted(prof, email); applyProfileToApp(prof); }
     else { window.CURRENT_ROLE='student'; window.CURRENT_USER=email; window.CURRENT_PROFILE=null; }
     closeLoginOverlay(); S.role=null; render();
     // Si l'accès gratuit / abonnement est déjà expiré, proposer le paiement
@@ -3041,9 +3117,9 @@ let regLevel = '';
 // ===== TARIFS ENSEIGNANTS (abonnement mensuel selon le niveau enseigné) =====
 const TEACHER_PLANS = {
   primaire:      {label:'Instituteur (Primaire)',                amount:3000},
-  college_lycee: {label:'Professeur (Collège / Lycée)',          amount:5000},
-  grande_ecole:  {label:'Professeur (Supérieur / Grande École)', amount:7500},
-  universite:    {label:'Professeur (Supérieur / Université)',   amount:10000}
+  college_lycee: {label:'Professeur (Collège / Lycée)',          amount:4000},
+  grande_ecole:  {label:'Professeur (Supérieur / Grande École)', amount:5000},
+  universite:    {label:'Professeur (Supérieur / Université)',   amount:6000}
 };
 let regTeachLevel = '';
 // Affiche le tarif correspondant au niveau d'enseignement choisi
@@ -3053,8 +3129,7 @@ function regTeachLevelChanged(){
   regTeachLevel = sel ? sel.value : '';
   if(!info) return;
   if(regTeachLevel && TEACHER_PLANS[regTeachLevel]){
-    const p=TEACHER_PLANS[regTeachLevel];
-    info.innerHTML='💼 Votre formule : <b>'+p.label+'</b> — <b>'+p.amount.toLocaleString('fr-FR')+' FCFA/mois</b>, après vos 2 heures gratuites de découverte.';
+    info.innerHTML='🎁 <b>'+TRIAL_DAYS+' jours gratuits</b> pour découvrir toutes les fonctionnalités.';
     info.style.display='block';
   } else { info.style.display='none'; }
 }
@@ -3286,7 +3361,7 @@ async function doRegister(){
     // 4) CAS B — Session active (Confirm email désactivé) : compléter le profil et entrer
     // Anti-fraude : accès gratuit selon l'appareil (les enseignants ne sont pas concernés par la limite)
     let tempExpiry;
-    if(role==='teacher'){ tempExpiry = new Date(Date.now()+2*60*60*1000).toISOString(); }
+    if(role==='teacher'){ tempExpiry = new Date(Date.now()+TRIAL_DAYS*86400000).toISOString(); }
     else { tempExpiry = await computeTrialExpiry(email); }
     const profileData = {
       id: uid, email: email,
@@ -3311,8 +3386,7 @@ async function doRegister(){
     if(!prof){ prof = profileData; }
     applyProfileToApp(prof);
     if(role==='teacher'){
-      const tp=TEACHER_PLANS[regTeachLevel]||{label:'Enseignant',amount:5000};
-      alert('✅ Votre compte enseignant est créé et activé !\n\n🎁 Vous bénéficiez de 2 heures gratuites de découverte.\n💼 Ensuite, votre formule '+tp.label+' est à '+tp.amount.toLocaleString('fr-FR')+' FCFA/mois (paiement Wave).\n\nVotre pièce justificative sera vérifiée par l\'administration. ⚠️ Tout document non conforme entraînera la suspension du compte.');
+      alert('✅ Votre compte enseignant est créé et activé !\n\n🎁 Vous bénéficiez de '+TRIAL_DAYS+' jours gratuits de découverte.\n\nVotre pièce justificative sera vérifiée par l\'administration. ⚠️ Tout document non conforme entraînera la suspension du compte.');
     }
     closeLoginOverlay();
     S.role=null;
@@ -3410,20 +3484,22 @@ function showAccessExpired(isTest){
     const tl=(window.CURRENT_PROFILE&&window.CURRENT_PROFILE.teacher_level)||'college_lycee';
     const tp=TEACHER_PLANS[tl]||TEACHER_PLANS.college_lycee;
     selectedPlan='month';
-    introText='Vous avez profité de vos 2 heures gratuites. Pour continuer à créer vos cours et exercices en illimité, souscrivez à votre abonnement enseignant :';
-    plansHtml=planRow('💼',tp.label,'30 jours · renouvelable',tp.amount.toLocaleString('fr-FR')+' FCFA','month');
+    introText='Pour continuer à créer vos cours et exercices, souscrivez à votre abonnement enseignant :';
+    plansHtml=planRow('💼',tp.label,'30 jours · '+PAID_DAILY_LIMIT.teacher+' générations/jour',tp.amount.toLocaleString('fr-FR')+' FCFA','month');
     payBtnLabel='💳 M\'abonner avec Wave';
   } else {
-    introText='Vous avez profité de vos 2 heures gratuites. Pour continuer à générer des cours et exercices en illimité, choisissez une formule Pro :';
-    plansHtml=planRow('⏱️','Pass Jour','24 heures','200 FCFA','day')
-      +planRow('📅','Pass Semaine','7 jours','500 FCFA','week')
-      +planRow('⭐','Pro Mensuel','30 jours','1 500 FCFA','month');
+    introText='Pour continuer à générer des cours et exercices, choisissez une formule :';
+    const g=studentGrid(), f=n=>n.toLocaleString('fr-FR')+' FCFA';
+    const lim=(g===STUDENT_PRICES.base?PAID_DAILY_LIMIT.base:PAID_DAILY_LIMIT.avance)+' générations/jour';
+    plansHtml=planRow('⏱️','Pass Jour','24 heures · '+lim,f(g.day),'day')
+      +planRow('📅','Pass Semaine','7 jours · '+lim,f(g.week),'week')
+      +planRow('⭐','Pro Mensuel','30 jours · '+lim,f(g.month),'month');
     payBtnLabel='💳 Passer Pro avec Wave';
   }
   ov.innerHTML='<div style="width:100%;max-width:430px;margin:auto;background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.25);border-radius:18px;padding:34px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.6);text-align:center;">'
     +testBadge
     +'<div style="font-size:42px;margin-bottom:10px;">⏳</div>'
-    +'<div style="font-family:Cinzel,serif;font-size:19px;font-weight:700;color:#FFD700;margin-bottom:8px;">'+(isTest?'Aperçu : accès gratuit terminé':'Votre accès gratuit est terminé')+'</div>'
+    +'<div style="font-family:Cinzel,serif;font-size:19px;font-weight:700;color:#FFD700;margin-bottom:8px;">'+(isTest?'Aperçu : essai gratuit terminé':((window.CURRENT_PROFILE&&accessActive(window.CURRENT_PROFILE).active)?'Choisissez votre formule':'Votre essai gratuit est terminé'))+'</div>'
     +'<div style="font-size:13px;color:#bbb;line-height:1.6;margin-bottom:20px;">'+introText+'</div>'
     +'<div style="background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.2);border-radius:12px;padding:8px 16px;text-align:left;">'
     +plansHtml
@@ -3457,16 +3533,22 @@ const WAVE_LINKS = {
 const WAVE_NUMBER = '+225 0700000000'; // Votre numéro Wave (paiement manuel de secours)
 
 // Renvoie la formule applicable : tarif ENSEIGNANT selon son niveau, ou formule élève/étudiant sélectionnée
+// Grille de prix selon le niveau de l'élève : Primaire/Collège = base ; Lycée/Supérieur = avancé
+function studentGrid(){
+  const lvl=(window.CURRENT_PROFILE&&window.CURRENT_PROFILE.niveau)||S.eduLevel||'';
+  return (lvl==='primaire'||lvl==='college') ? STUDENT_PRICES.base : STUDENT_PRICES.avance;
+}
 function currentPlanInfo(){
   if(window.CURRENT_ROLE==='teacher' && !window.WAVE_TEST_MODE){
     const tl=(window.CURRENT_PROFILE&&window.CURRENT_PROFILE.teacher_level)||'college_lycee';
     const tp=TEACHER_PLANS[tl]||TEACHER_PLANS.college_lycee;
     return {plan:'month', label:tp.label+' — 30 jours', amount:tp.amount, hours:720, link:WAVE_PAY_BASE+'?amount='+tp.amount};
   }
+  const g=studentGrid();
   const std={
-    day:{label:'Pass Jour (24h)',amount:200,hours:24},
-    week:{label:'Pass Semaine (7 jours)',amount:500,hours:168},
-    month:{label:'Pro Mensuel (30 jours)',amount:1500,hours:720}
+    day:{label:'Pass Jour (24h)',amount:g.day,hours:24},
+    week:{label:'Pass Semaine (7 jours)',amount:g.week,hours:168},
+    month:{label:'Pro Mensuel (30 jours)',amount:g.month,hours:720}
   };
   const s=std[selectedPlan]||std.month;
   return {plan:selectedPlan||'month', label:s.label, amount:s.amount, hours:s.hours, link:WAVE_PAY_BASE+'?amount='+s.amount};
@@ -3563,8 +3645,9 @@ window.addEventListener('DOMContentLoaded', async ()=>{
       if(data && data.session){
         // Un vrai utilisateur est connecté → on efface toute session admin résiduelle
         try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
-        const {data:prof} = await supa.from('profiles').select('*').eq('id', data.session.user.id).maybeSingle();
+        let {data:prof} = await supa.from('profiles').select('*').eq('id', data.session.user.id).maybeSingle();
         if(prof){
+          prof = await ensureTrialStarted(prof, data.session.user.email);
           const acc = accessActive(prof);
           applyProfileToApp(prof);
           closeLoginOverlay();
