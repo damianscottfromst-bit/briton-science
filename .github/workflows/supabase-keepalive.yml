@@ -1,0 +1,36 @@
+# BRITON SCIENCE — Garde le projet Supabase « éveillé » (évite la mise en pause après 7 jours sans activité)
+# Tourne tout seul chaque jour à 06 h 23 (heure d'Abidjan). Rien à configurer.
+name: Supabase réveil (Briton Science)
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  reveil:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Petite lecture dans la base Supabase
+        env:
+          SUPABASE_URL: https://lkjijcjogbrzduihewjo.supabase.co
+          # Clé publique (la même que dans index.html) : elle ne donne aucun droit d'administration
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxramlqY2pvZ2JyemR1aWhld2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxODgzNDYsImV4cCI6MjA5ODc2NDM0Nn0.s70kFo3ppI4zI1ezns1SLdILoIHK-0TWM40pImmgp1Q
+        run: |
+          for essai in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$SUPABASE_URL/rest/v1/profiles?select=id&limit=1" -H "apikey: $SUPABASE_ANON_KEY")
+            echo "Essai $essai : réponse $code"
+            if [ "$code" = "200" ]; then echo "Supabase est éveillé."; exit 0; fi
+            sleep 20
+          done
+          echo "Supabase ne répond pas : le projet est peut-être en pause. Ouvrez supabase.com et cliquez sur Restore project."
+          exit 1
+
+      - name: Garder ce programme actif (règle GitHub des 60 jours)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/supabase-keepalive.yml/enable" || true
