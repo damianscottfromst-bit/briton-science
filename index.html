@@ -2333,11 +2333,11 @@ ${!canGo&&!S.loading?'disabled':''} onclick="doGenerate('exercice')">
 ${S.loading&&S.genMode==='exercice'?`<span class="loading-dots"><span></span><span></span><span></span></span>`:'✦ '+t('btn_gen_exo')}
 </button>
 </div>
-${!canGo&&!S.loading?`<div style="font-size:11px;color:#555;text-align:center;margin-top:2px;margin-bottom:14px;">${t('gen_hint')}</div>`:''}
+${!canGo&&!S.loading?`<div id="gen-hint" style="font-size:11px;color:#555;text-align:center;margin-top:2px;margin-bottom:14px;">${t('gen_hint')}</div>`:''}
 ${S.generated?`
 <div class="result-box" style="border:1px solid rgba(108,99,255,0.25);">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-<div class="result-label" style="color:#6C63FF;">${S.genMode==='cours'?(isPupil()&&!S.showFullForPupil?'📝 Résumé du cours':(LANG==='en'?'📚 Generated lesson':'📚 Cours généré')):(LANG==='en'?'✦ Generated exercise':'✦ Exercice généré')}</div>
+<div class="result-label" style="color:#6C63FF;">${S.genMode==='cours'?(needsSummary()&&!S.showFullForPupil?'📝 Résumé du cours':(LANG==='en'?'📚 Generated lesson':'📚 Cours généré')):(LANG==='en'?'✦ Generated exercise':'✦ Exercice généré')}</div>
 <div style="display:flex;gap:6px;flex-wrap:wrap;">
 <button onclick="downloadPDF(mdFormat(${needsSummary()&&!S.showFullForPupil?'S.studentSummary||S.generated':'S.generated'}),getDocTitle(S.genMode==='cours'?'Cours':'Exercice'))" style="font-size:10px;color:#FF6B6B;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:6px;padding:4px 11px;cursor:pointer;">📄 PDF</button>
 ${canExportWord()?`<button onclick="downloadWord(mdFormat(S.generated),getDocTitle(S.genMode==='cours'?'Cours':'Exercice'))" style="font-size:10px;color:#6C63FF;background:rgba(108,99,255,0.12);border:1px solid rgba(108,99,255,0.35);border-radius:6px;padding:4px 11px;cursor:pointer;">📝 Word</button>`:''}
@@ -2506,11 +2506,22 @@ ${t('prog_tip')}
 }
 function bindEvents(){
 const ti=document.getElementById('topic-input');
-if(ti)ti.addEventListener('input',e=>{S.topic=e.target.value;});
+if(ti)ti.addEventListener('input',e=>{S.topic=e.target.value;updateActionButtons();});
 const ei=document.getElementById('ex-input');
-if(ei)ei.addEventListener('input',e=>{S.exerciseForCorrect=e.target.value;});
+if(ei)ei.addEventListener('input',e=>{S.exerciseForCorrect=e.target.value;updateActionButtons();});
 const ai=document.getElementById('ans-input');
 if(ai)ai.addEventListener('input',e=>{S.studentAnswer=e.target.value;});
+}
+// Active les boutons dès que l'utilisateur écrit (sans redessiner la page, pour garder le clavier ouvert)
+function updateActionButtons(){
+const canGen=!!(S.cycle&&S.sub&&S.subject&&S.topic.trim()&&!S.loading);
+const bc=document.getElementById('btn-gen-cours'),be=document.getElementById('btn-gen-exo');
+if(bc){bc.disabled=!canGen;bc.style.background=canGen?'linear-gradient(135deg,#B8860B,#FFD700)':'#2a2a3a';bc.style.color=canGen?'#07071a':'#555';bc.style.cursor=canGen?'pointer':'not-allowed';}
+if(be){be.disabled=!canGen;be.style.background=canGen?'linear-gradient(135deg,#6C63FF,#2EC4B6)':'#2a2a3a';be.style.color=canGen?'#fff':'#555';be.style.cursor=canGen?'pointer':'not-allowed';}
+const gh=document.getElementById('gen-hint');if(gh)gh.style.display=canGen?'none':'block';
+const canCor=!!((S.exerciseForCorrect.trim()||S.pdfText)&&!S.loading);
+const bk=document.getElementById('btn-correct');
+if(bk){bk.disabled=!canCor;bk.style.background=canCor?'linear-gradient(135deg,#FF6B6B,#F4A261)':'#2a2a3a';bk.style.color=canCor?'#fff':'#555';}
 }
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 async function doGenerate(mode){
