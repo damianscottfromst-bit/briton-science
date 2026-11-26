@@ -1,10 +1,10 @@
 # BRITON SCIENCE — Garde le projet Supabase « éveillé » (évite la mise en pause après 7 jours sans activité)
-# Tourne tout seul chaque jour à 06 h 23 (heure d'Abidjan). Rien à configurer.
-name: Supabase réveil (Briton Science)
+# Tourne tout seul deux fois par jour : 06 h 23 et 18 h 23 (heure d'Abidjan). Rien à configurer.
+name: Garder Supabase éveillé (Briton Science)
 
 on:
   schedule:
-    - cron: '23 6 * * *'
+    - cron: '23 6,18 * * *'
   workflow_dispatch:
 
 permissions:
