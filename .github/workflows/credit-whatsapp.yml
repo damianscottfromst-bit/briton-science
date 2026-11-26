@@ -86,20 +86,21 @@ jobs:
             if (!j.ok) throw new Error('Envoi Telegram refusé. Vérifiez TELEGRAM_TOKEN et TELEGRAM_CHAT_ID.');
           }
 
-          async function coutsParJour(debutISO, finISO) {
+          async function coutsParJour(debutISO) {
             const parJour = {};
             let page = null, tours = 0;
             do {
               const u = new URL('https://api.anthropic.com/v1/organizations/cost_report');
               u.searchParams.set('starting_at', debutISO);
-              u.searchParams.set('ending_at', finISO);
               u.searchParams.set('bucket_width', '1d');
               u.searchParams.set('limit', '31');
               if (page) u.searchParams.set('page', page);
               const r = await fetch(u, { headers: { 'x-api-key': ADMIN_KEY, 'anthropic-version': '2023-06-01', 'user-agent': 'BritonScience-credit/1.0' } });
               if (!r.ok) {
-                if (r.status === 401 || r.status === 403) throw new Error('Clé d\'administration refusée (code ' + r.status + '). Vérifiez ANTHROPIC_ADMIN_KEY.');
-                throw new Error('Rapport de coûts indisponible (code ' + r.status + ').');
+                let detail = '';
+                try { const e = await r.json(); detail = String((e.error && e.error.message) || e.message || '').slice(0, 220); } catch (_) {}
+                if (r.status === 401 || r.status === 403) throw new Error('Clé d\'administration refusée (code ' + r.status + '). Vérifiez ANTHROPIC_ADMIN_KEY. ' + detail);
+                throw new Error('Rapport de coûts indisponible (code ' + r.status + '). ' + detail);
               }
               const j = await r.json();
               for (const b of j.data || []) {
@@ -130,7 +131,7 @@ jobs:
 
             let texte, alerte = false;
             try {
-              const parJour = await coutsParJour(DATE_RELEVE + 'T00:00:00Z', demain.toISOString().replace('.000', ''));
+              const parJour = await coutsParJour(DATE_RELEVE + 'T00:00:00Z');
               const depense = Object.values(parJour).reduce((a, b) => a + b, 0);
               const solde = SOLDE_RELEVE - depense;
               // Moyenne des 7 derniers jours complets (sans aujourd'hui) depuis le relevé
@@ -142,7 +143,7 @@ jobs:
                 '*Briton Science – Crédit API* 🤖',
                 '💰 Solde estimé : *' + usd(solde) + '* (≈ ' + fcfa(Math.max(solde, 0)) + ')',
                 '📉 Dépensé hier : ' + usd(parJour[hier] || 0) + ' · aujourd\'hui : ' + usd(parJour[aujourdhui] || 0),
-                moyenne > 0 ? '📊 Moyenne : ' + usd(moyenne) + '/jour → environ ' + restants + ' jour' + (restants > 1 ? 's' : '') + ' restant' + (restants > 1 ? 's' : '') : '📊 Pas encore de dépense mesurée depuis le ' + DATE_RELEVE,
+                moyenne > 0 ? '📊 Moyenne : ' + usd(moyenne) + '/jour → environ ' + restants + ' jour' + (restants > 1 ? 's' : '') + ' restant' + (restants > 1 ? 's' : '') : '📊 La moyenne par jour s\'affichera dès demain.',
                 alerte ? '⚠️ *Crédit bas* (moins de ' + usd(SEUIL) + ') : rechargez sur platform.claude.com/settings/billing puis mettez à jour CREDIT_SOLDE_USD et CREDIT_DATE.'
                        : '✅ Tout va bien.',
               ];
