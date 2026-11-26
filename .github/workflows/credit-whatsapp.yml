@@ -131,7 +131,10 @@ jobs:
 
             let texte, alerte = false;
             try {
-              const parJour = await coutsParJour(DATE_RELEVE + 'T00:00:00Z');
+              const debut = DATE_RELEVE + 'T00:00:00Z';
+              const minuitAujourdhui = Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), maintenant.getUTCDate());
+              // Anthropic ne donne que des journées complètes (UTC) : rien à soustraire le jour même du relevé
+              const parJour = new Date(debut).getTime() < minuitAujourdhui ? await coutsParJour(debut) : {};
               const depense = Object.values(parJour).reduce((a, b) => a + b, 0);
               const solde = SOLDE_RELEVE - depense;
               // Moyenne des 7 derniers jours complets (sans aujourd'hui) depuis le relevé
@@ -142,8 +145,9 @@ jobs:
               const lignes = [
                 '*Briton Science – Crédit API* 🤖',
                 '💰 Solde estimé : *' + usd(solde) + '* (≈ ' + fcfa(Math.max(solde, 0)) + ')',
-                '📉 Dépensé hier : ' + usd(parJour[hier] || 0) + ' · aujourd\'hui : ' + usd(parJour[aujourdhui] || 0),
+                '📉 Dépensé hier : ' + usd(parJour[hier] || 0),
                 moyenne > 0 ? '📊 Moyenne : ' + usd(moyenne) + '/jour → environ ' + restants + ' jour' + (restants > 1 ? 's' : '') + ' restant' + (restants > 1 ? 's' : '') : '📊 La moyenne par jour s\'affichera dès demain.',
+                'ℹ️ Dépenses comptées jusqu\'à hier soir (relevé du ' + DATE_RELEVE + ' : ' + usd(SOLDE_RELEVE) + ').',
                 alerte ? '⚠️ *Crédit bas* (moins de ' + usd(SEUIL) + ') : rechargez sur platform.claude.com/settings/billing puis mettez à jour CREDIT_SOLDE_USD et CREDIT_DATE.'
                        : '✅ Tout va bien.',
               ];
