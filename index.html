@@ -2201,11 +2201,18 @@ Briton <span class="gold-text">Science</span>
 <div class="role-badge" style="background:rgba(46,196,182,0.12);border:1px solid rgba(46,196,182,0.35);color:#7ef0e8;">Ouvrir</div>
 </div>
 </div>
+<div class="role-card" onclick="S.role='teacher';S.tab=3;S.stats=null;S.statsError='';S.statsLoading=false;render()" style="margin-top:18px;">
+<div class="role-emoji">📊</div>
+<div class="role-title" style="color:#FFD700;">Statistiques</div>
+<div class="role-desc">Inscriptions et générations du jour, derniers inscrits</div>
+<div class="role-badge" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.35);color:#FFD700;">Voir</div>
+</div>
 </div>`;
 }
 function buildMainApp(){
 const cycle=getCycle();
 const tabs=[t('tab0'),t('tab1'),t('tab2')];
+if(window.CURRENT_ROLE==='admin') tabs.push('📊 Statistiques');
 // Cycles visibles selon le rôle :
 // - étudiants université/grande école -> uniquement Supérieur pré-sélectionné, mais accès à tout (recherche)
 // - élèves -> uniquement primaire/collège/lycée (jamais le supérieur)
@@ -2294,7 +2301,7 @@ ${cycle?.emoji} ${getLevelLabel()}
 ${tabs.map((t,i)=>`<button class="app-tab ${S.tab===i?'active':''}" onclick="S.tab=${i};render()">${t}</button>`).join('')}
 </div>
 
-${S.tab===0?buildGenerate():S.tab===1?buildCorrect():buildProgress()}
+${S.tab===0?buildGenerate():S.tab===1?buildCorrect():(S.tab===3&&window.CURRENT_ROLE==='admin')?buildStats():buildProgress()}
 </div>`;
 }
 function buildGenerate(){
@@ -2503,6 +2510,83 @@ ${p.score!==null?`<div class="prog-bar-wrap">
 ${t('prog_tip')}
 </div>
 </div>`;
+}
+// ===== STATISTIQUES (réservé à l'administrateur) =====
+async function loadStats(){
+  S.statsLoading=true; S.statsError='';
+  try{
+    if(!supa) throw new Error('Service indisponible, réessayez dans un instant.');
+    const {data,error}=await supa.rpc('admin_stats');
+    if(error) throw error;
+    S.stats=(typeof data==='string')?JSON.parse(data):data;
+    S.statsAt=new Date();
+  }catch(e){
+    const m=String((e&&e.message)||e||'');
+    S.statsError=/ACCES_REFUSE/.test(m)?'Réservé à l\'administrateur.'
+      :/admin_stats|schema cache|does not exist|Could not find/i.test(m)?'Installez d\'abord la requête SQL « requete-3-statistiques.sql » dans Supabase (SQL Editor > New query > Run).'
+      :'Erreur : '+m.slice(0,160);
+  }
+  S.statsLoading=false;
+  if(S.tab===3) render();
+}
+function statsRoleLabel(r,n){
+  const roles={student:'Élève',university:'Étudiant (université)',grande_ecole:'Étudiant (grande école)',teacher:'Enseignant',admin:'Administrateur'};
+  const niv={primaire:'primaire',college:'collège',lycee:'lycée',superieur:'supérieur'};
+  return (roles[r]||r||'?')+(n?' · '+(niv[n]||n):'');
+}
+function buildStats(){
+  if(window.CURRENT_ROLE!=='admin') return '<div style="padding:30px;text-align:center;color:#888;">Réservé à l\'administrateur.</div>';
+  if(!S.stats&&!S.statsLoading&&!S.statsError){ S.statsLoading=true; setTimeout(loadStats,0); }
+  const heure=S.statsAt?S.statsAt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
+  let h=`<div style="animation:fadeUp 0.35s ease both;">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+<div class="app-label" style="margin:0;">📊 Statistiques${heure?' · mises à jour à '+heure:''}</div>
+<button onclick="S.stats=null;S.statsError='';S.statsLoading=false;render()" style="font-size:11px;color:#FFD700;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.35);border-radius:7px;padding:5px 12px;cursor:pointer;font-family:DM Sans,sans-serif;">🔄 Actualiser</button>
+</div>`;
+  if(S.statsError) return h+`<div class="tip-box" style="background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);color:#ff9b9b;">⚠️ ${escHtml(S.statsError)}</div></div>`;
+  if(!S.stats) return h+`<div style="text-align:center;padding:40px;color:#FFD700;"><span class="loading-dots"><span></span><span></span><span></span></span><div style="font-size:12px;color:#888;margin-top:10px;">Chargement des statistiques…</div></div></div>`;
+  const st=S.stats, a=st.aujourdhui||{}, tt=st.totaux||{};
+  const n=v=>Number(v)||0;
+  const pct=(x,y)=>n(y)?Math.round(100*n(x)/n(y))+' %':'—';
+  const card=(icon,val,label,color)=>`<div class="stat-card"><div style="font-size:18px;margin-bottom:6px;">${icon}</div><div class="stat-card-val" style="color:${color};">${val}</div><div class="stat-card-label">${label}</div></div>`;
+  h+=`<div class="app-label" style="margin-bottom:9px;">Aujourd'hui</div>
+<div class="stat-cards">
+${card('🆕',n(a.inscrits),'Inscriptions','#2EC4B6')}
+${card('⚡',n(a.generations),'Générations','#FFD700')}
+${card('👤',n(a.actifs),'Utilisateurs actifs','#6C63FF')}
+${card('📅',n(tt.inscrits_7j),'Inscriptions (7 jours)','#F4A261')}
+</div>
+<div class="app-label" style="margin-bottom:9px;">Depuis le début</div>
+<div class="stat-cards">
+${card('👥',n(tt.comptes),'Comptes créés','#6C63FF')}
+${card('✉️',n(tt.confirmes)+' <span style="font-size:12px;color:#888;">('+pct(tt.confirmes,tt.comptes)+')</span>','E-mails confirmés','#2EC4B6')}
+${card('🚀',n(tt.ont_genere)+' <span style="font-size:12px;color:#888;">('+pct(tt.ont_genere,tt.comptes)+')</span>','Ont généré au moins 1 fois','#FFD700')}
+${card('⚡',n(tt.generations_7j),'Générations (7 jours)','#F4A261')}
+${card('🎁',n(tt.essais_en_cours),'Essais gratuits en cours','#E9C46A')}
+${card('⭐',n(tt.abonnes_actifs),'Abonnés actifs','#2EC4B6')}
+</div>`;
+  const jours=st.par_jour||[];
+  const maxI=Math.max(1,...jours.map(j=>n(j.inscriptions))), maxG=Math.max(1,...jours.map(j=>n(j.generations)));
+  const bar=(v,max,col)=>`<div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.round(100*n(v)/max)}%;background:${col};border-radius:4px;"></div></div><span style="min-width:22px;text-align:right;color:#ddd;">${n(v)}</span></div>`;
+  h+=`<div class="app-label" style="margin:6px 0 9px;">14 derniers jours</div>
+<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:11px;padding:12px 14px;margin-bottom:18px;font-size:11px;">
+<div style="display:grid;grid-template-columns:44px 1fr 1fr;gap:10px;color:#888;margin-bottom:8px;"><span>Jour</span><span>🆕 Inscriptions</span><span>⚡ Générations</span></div>
+${jours.map(j=>{const d=String(j.jour||'');return `<div style="display:grid;grid-template-columns:44px 1fr 1fr;gap:10px;align-items:center;margin-bottom:6px;"><span style="color:#aaa;">${d.slice(8,10)}/${d.slice(5,7)}</span>${bar(j.inscriptions,maxI,'#2EC4B6')}${bar(j.generations,maxG,'#FFD700')}</div>`;}).join('')}
+</div>`;
+  const prof=st.profils||[];
+  if(prof.length) h+=`<div class="app-label" style="margin-bottom:9px;">Profils des comptes</div>
+<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px;">${prof.map(p=>`<span style="padding:6px 11px;border-radius:20px;background:rgba(108,99,255,0.1);border:1px solid rgba(108,99,255,0.25);color:#c0b8ff;font-size:11px;">${escHtml(statsRoleLabel(p.role,p.niveau))} : <b style="color:#fff;">${n(p.comptes)}</b></span>`).join('')}</div>`;
+  const der=st.derniers||[];
+  const fd=v=>{if(!v)return '—';const d=new Date(v);return isNaN(d)?'—':d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});};
+  h+=`<div class="app-label" style="margin-bottom:9px;">Derniers inscrits (${der.length})</div>
+<div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.06);border-radius:11px;margin-bottom:16px;">
+<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:520px;">
+<thead><tr style="background:rgba(255,215,0,0.06);color:#FFD700;text-align:left;"><th style="padding:8px;">Inscrit le</th><th style="padding:8px;">Nom / e-mail</th><th style="padding:8px;">Profil</th><th style="padding:8px;" title="E-mail confirmé">✉️</th><th style="padding:8px;">Dernière connexion</th><th style="padding:8px;text-align:right;">⚡</th></tr></thead>
+<tbody>${der.map(u=>`<tr style="border-top:1px solid rgba(255,255,255,0.05);color:#d8d8ea;"><td style="padding:7px 8px;white-space:nowrap;">${fd(u.inscrit_le)}</td><td style="padding:7px 8px;"><div style="color:#fff;">${escHtml(String(u.nom||'—'))}</div><div style="color:#888;">${escHtml(String(u.email||''))}</div></td><td style="padding:7px 8px;">${escHtml(statsRoleLabel(u.role,u.niveau))}</td><td style="padding:7px 8px;">${u.confirme?'✅':'⏳'}</td><td style="padding:7px 8px;white-space:nowrap;">${fd(u.derniere_connexion)}</td><td style="padding:7px 8px;text-align:right;font-weight:700;color:${n(u.generations)?'#FFD700':'#666'};">${n(u.generations)}</td></tr>`).join('')}</tbody>
+</table></div>
+<div class="tip-box" style="background:rgba(46,196,182,0.07);border:1px solid rgba(46,196,182,0.25);color:#8fe6de;">ℹ️ ⚡ = générations (cours, exercices, corrigés), comptées depuis l'installation du compteur. ⏳ = e-mail pas encore confirmé. Le nombre de <b>visiteurs</b> du site se trouve dans Cloudflare → Web Analytics.</div>
+</div>`;
+  return h;
 }
 function bindEvents(){
 const ti=document.getElementById('topic-input');
