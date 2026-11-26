@@ -1,14 +1,15 @@
-# BRITON SCIENCE — Message WhatsApp chaque matin avec le crédit API restant
+# BRITON SCIENCE — Message chaque matin (Telegram et/ou WhatsApp) avec le crédit API restant
 # Tourne tout seul chaque jour à 07 h 41 (heure d'Abidjan).
 # Secrets à créer dans GitHub (Settings > Secrets and variables > Actions) :
 #   ANTHROPIC_ADMIN_KEY  : clé d'administration Claude (commence par sk-ant-admin01-)
 #   CREDIT_SOLDE_USD     : solde affiché dans la console Claude le jour du relevé (ex : 18.40)
 #   CREDIT_DATE          : date de ce relevé, format AAAA-MM-JJ (ex : 2026-11-25)
-#   WHATSAPP_NUMERO      : votre numéro WhatsApp avec l'indicatif (ex : +2250758405178)
-#   CALLMEBOT_APIKEY     : code reçu de CallMeBot sur WhatsApp
+#   TELEGRAM_TOKEN       : jeton du robot Telegram donné par @BotFather
+#   TELEGRAM_CHAT_ID     : numéro envoyé par le robot au premier message (à ajouter ensuite)
+#   (plus tard, si CallMeBot rouvre) WHATSAPP_NUMERO + CALLMEBOT_APIKEY pour WhatsApp
 #   (facultatif) SEUIL_ALERTE_USD : seuil d'alerte en dollars (5 par défaut)
 #   (facultatif) TAUX_FCFA        : 1 dollar en FCFA (600 par défaut)
-name: Crédit API sur WhatsApp (Briton Science)
+name: Crédit API sur Telegram-WhatsApp (Briton Science)
 
 on:
   schedule:
@@ -23,18 +24,20 @@ jobs:
   credit:
     runs-on: ubuntu-latest
     steps:
-      - name: Calculer le crédit restant et l'envoyer sur WhatsApp
+      - name: Calculer le crédit restant et l'envoyer
         env:
           ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
           CREDIT_SOLDE_USD: ${{ secrets.CREDIT_SOLDE_USD }}
           CREDIT_DATE: ${{ secrets.CREDIT_DATE }}
           WHATSAPP_NUMERO: ${{ secrets.WHATSAPP_NUMERO }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SEUIL_ALERTE_USD: ${{ secrets.SEUIL_ALERTE_USD }}
           TAUX_FCFA: ${{ secrets.TAUX_FCFA }}
         run: |
           node --input-type=module <<'SCRIPT'
-          // BRITON SCIENCE — Message WhatsApp quotidien : crédit API restant (estimation)
+          // BRITON SCIENCE — Message quotidien (Telegram et/ou WhatsApp) : crédit API restant (estimation)
           // Solde estimé = solde relevé dans la console Claude (CREDIT_SOLDE_USD, à la date CREDIT_DATE)
           //                − dépenses facturées depuis cette date (API « Cost Report » d'Anthropic).
           const env = process.env;
@@ -43,6 +46,8 @@ jobs:
           const DATE_RELEVE = String(env.CREDIT_DATE || '').trim();
           const TELEPHONE = String(env.WHATSAPP_NUMERO || '').replace(/[^0-9+]/g, '');
           const CALLMEBOT_KEY = String(env.CALLMEBOT_APIKEY || '').trim();
+          const TG_TOKEN = String(env.TELEGRAM_TOKEN || '').trim();
+          let TG_CHAT = String(env.TELEGRAM_CHAT_ID || '').trim();
           const SEUIL = parseFloat(String(env.SEUIL_ALERTE_USD || '5').replace(',', '.')) || 5;
           const TAUX = parseFloat(String(env.TAUX_FCFA || '600').replace(',', '.')) || 600;
 
@@ -58,6 +63,27 @@ jobs:
             if (!r.ok || /apikey is invalid|invalid api ?key|wrong (api)?key|not active|phone number is not/i.test(corps.slice(0, 3000))) {
               throw new Error('Envoi WhatsApp refusé (code ' + r.status + '). Vérifiez WHATSAPP_NUMERO et CALLMEBOT_APIKEY.');
             }
+          }
+
+          async function envoyerTelegram(texte) {
+            const base = 'https://api.telegram.org/bot' + TG_TOKEN;
+            let note = '';
+            if (!TG_CHAT) {
+              // Première fois : on retrouve votre conversation avec le robot (après « Démarrer »)
+              const r = await fetch(base + '/getUpdates');
+              const j = await r.json().catch(() => ({}));
+              if (!j.ok) throw new Error('Telegram refuse le TELEGRAM_TOKEN. Vérifiez-le.');
+              const chats = (j.result || []).map(u => (u.message || u.edited_message || u.my_chat_member || {}).chat).filter(Boolean);
+              if (!chats.length) throw new Error('Telegram : ouvrez votre robot, touchez « Démarrer », puis relancez le programme.');
+              TG_CHAT = String(chats[chats.length - 1].id);
+              note = '\n\n🔧 Dernière étape : ajoutez dans GitHub le secret TELEGRAM_CHAT_ID = ' + TG_CHAT;
+            }
+            const r = await fetch(base + '/sendMessage', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ chat_id: TG_CHAT, text: texte.replace(/\*/g, '') + note, disable_web_page_preview: true }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!j.ok) throw new Error('Envoi Telegram refusé. Vérifiez TELEGRAM_TOKEN et TELEGRAM_CHAT_ID.');
           }
 
           async function coutsParJour(debutISO, finISO) {
@@ -92,8 +118,9 @@ jobs:
             if (!ADMIN_KEY) manque.push('ANTHROPIC_ADMIN_KEY');
             if (!(SOLDE_RELEVE >= 0)) manque.push('CREDIT_SOLDE_USD');
             if (!/^\d{4}-\d{2}-\d{2}$/.test(DATE_RELEVE)) manque.push('CREDIT_DATE (format AAAA-MM-JJ)');
-            if (!TELEPHONE) manque.push('WHATSAPP_NUMERO');
-            if (!CALLMEBOT_KEY) manque.push('CALLMEBOT_APIKEY');
+            const whatsapp = !!(TELEPHONE && CALLMEBOT_KEY);
+            const telegram = !!TG_TOKEN;
+            if (!whatsapp && !telegram) manque.push('TELEGRAM_TOKEN (ou bien WHATSAPP_NUMERO + CALLMEBOT_APIKEY)');
             if (manque.length) throw new Error('Secrets manquants ou incorrects : ' + manque.join(', '));
 
             const maintenant = new Date();
@@ -124,8 +151,12 @@ jobs:
               alerte = true;
               texte = '*Briton Science – Crédit API* 🤖\n⚠️ Impossible de lire le crédit aujourd\'hui : ' + e.message + '\nVérifiez le solde sur platform.claude.com/settings/billing';
             }
-            await envoyerWhatsApp(texte);
-            console.log('Message WhatsApp envoyé' + (alerte ? ' (avec alerte).' : '.'));
+            const erreurs = [];
+            let envoyes = 0;
+            if (TG_TOKEN) { try { await envoyerTelegram(texte); envoyes++; console.log('Message Telegram envoyé.'); } catch (e) { erreurs.push(e.message); } }
+            if (TELEPHONE && CALLMEBOT_KEY) { try { await envoyerWhatsApp(texte); envoyes++; console.log('Message WhatsApp envoyé.'); } catch (e) { erreurs.push(e.message); } }
+            if (erreurs.length) { console.error('ÉCHEC : ' + erreurs.join(' | ')); process.exitCode = 1; }
+            if (envoyes && alerte) console.log('Alerte : crédit bas ou illisible.');
             // En cas d'alerte, GitHub vous envoie aussi un e-mail (exécution en échec)
             if (alerte) process.exitCode = 1;
           }
