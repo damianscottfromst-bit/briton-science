@@ -1249,13 +1249,19 @@ if(S.cycle==='superieur'&&S.filiere){base+=` (Filière : ${S.filiere}`;if(S.fili
 return base;
 }
 function getCycle(){return CYCLES.find(x=>x.id===S.cycle);}
+// En-têtes des demandes à l'IA : on joint le jeton du compte connecté (l'adresse /api/claude refuse les visiteurs)
+async function enTetesAPI(){
+const h={'Content-Type':'application/json'};
+try{ if(supa){ const {data}=await supa.auth.getSession(); const t=data&&data.session&&data.session.access_token; if(t) h.Authorization='Bearer '+t; } }catch(e){ console.warn('jeton', e); }
+return h;
+}
 async function callClaude(messages,system,retries,maxTokens){
 if(retries===undefined)retries=3;
 if(maxTokens===undefined)maxTokens=2000;
 try{
 const r=await fetch('/api/claude',{
 method:'POST',
-headers:{'Content-Type':'application/json'},
+headers:await enTetesAPI(),
 body:JSON.stringify({model:getModel(),max_tokens:scaleTokens(maxTokens),system,messages})
 });
 if(!r.ok){
@@ -1320,7 +1326,7 @@ let convo=messages.slice();
 for(let i=0;i<4;i++){
 const r=await fetch('/api/claude',{
 method:'POST',
-headers:{'Content-Type':'application/json'},
+headers:await enTetesAPI(),
 body:JSON.stringify({model:getModel(),max_tokens:scaleTokens(maxTokens),system,messages:convo})
 });
 if(!r.ok){
