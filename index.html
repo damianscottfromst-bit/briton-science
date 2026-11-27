@@ -851,7 +851,7 @@ function majNav(){
   try{ if(c && typeof deferredPrompt!=='undefined' && deferredPrompt){ const b=document.getElementById('pwa-banner'); if(b && !b.dataset.vu){ b.dataset.vu='1'; setTimeout(()=>{ b.style.display='flex'; },2500); } } }catch(e){}
 }
 function finVerifSession(){ document.body.classList.remove('lp-verif'); majNav(); }
-function apresConnexion(){ showPage('app'); finVerifSession(); }
+function apresConnexion(){ showPage('app'); if(typeof initApp==='function') initApp(); finVerifSession(); }
 window.addEventListener('scroll', majBarreAccueil, {passive:true});
 // Session déjà enregistrée sur cet appareil ? On cache l'accueil le temps de la vérifier (pas de clignotement)
 try{ if(Object.keys(localStorage).some(k=>/^sb-.+-auth-token$/.test(k))) document.body.classList.add('lp-verif'); }catch(e){}
@@ -1239,7 +1239,7 @@ function trackActivity(type, subjectLabel, scorePercent){
 }
 let S={role:null,cycle:null,sub:null,subject:null,topic:'',tab:0,filiere:'',filiereMatiere:'',genMode:'',
 generated:'',exerciseForCorrect:'',studentAnswer:'',correction:'',loading:false,
-forceCycle:null,eduType:null,studentSummary:'',showFullForPupil:false};
+forceCycle:null,eduType:null,studentSummary:'',showFullForPupil:false,pdfText:'',pdfName:''};
 function getLevelLabel(){
 if(!S.cycle||!S.sub)return null;
 const c=CYCLES.find(x=>x.id===S.cycle);
@@ -2848,7 +2848,7 @@ const lvl=getLevelLabel()||'non précisé';
 const ans=S.studentAnswer;
 try{
 let messages;
-if(S.pdfText.startsWith('__PDF__')){
+if((S.pdfText||'').startsWith('__PDF__')){
 const b64=S.pdfText.replace('__PDF__','').replace('__END__','');
 const instr=hasAnswer
 ?(LANG==='en'
@@ -2858,7 +2858,7 @@ const instr=hasAnswer
 ?`This PDF contains an exercise for a ${lvl} student in Côte d'Ivoire. Provide a complete, detailed model solution (corrigé) with all steps and final answers.`
 :`Ce PDF contient un exercice pour un élève de ${lvl} en Côte d'Ivoire. Rédige le corrigé complet et détaillé, avec toutes les étapes de résolution et les réponses finales.`);
 messages=[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:instr}]}];
-}else if(S.pdfText.startsWith('__IMG__')){
+}else if((S.pdfText||'').startsWith('__IMG__')){
 const parts=S.pdfText.replace('__IMG__','').split('__DATA__');
 const mime=parts[0]||'image/jpeg';
 const b64=parts[1].replace('__END__','');
@@ -2881,7 +2881,7 @@ const prompt=hasAnswer
 messages=[{role:'user',content:prompt}];
 }
 S.correction=await callClaudeFull(messages,system,8000);
-}catch(e){console.error(e);S.correction=/504|timeout/i.test(e.message)?'⏳ La correction a pris trop de temps. Veuillez réessayer.':'❌ '+e.message+' — Vérifiez votre connexion internet.';}
+}catch(e){console.error(e);S.correction=/504|timeout/i.test(e.message)?'⏳ La correction a pris trop de temps. Veuillez réessayer.':'❌ '+e.message+(/fetch|network|réseau|load failed/i.test(e.message)?' — Vérifiez votre connexion internet.':'');}
 setApiBusy(false);
 // Enregistrer l'activité de correction, avec la note si l'élève a fourni ses réponses
 if(S.correction && !S.correction.startsWith('❌') && !S.correction.startsWith('⏳')){
