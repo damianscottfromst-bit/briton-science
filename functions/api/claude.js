@@ -3,6 +3,8 @@
 // Il répond à l'URL /api/claude. La clé API reste cachée dans les variables Cloudflare.
 // PROTECTION : seuls les comptes connectés (jeton Supabase valide) dont l'essai ou l'abonnement est actif
 // peuvent l'utiliser. Plafond d'appels par jour et par compte si la requête SQL n° 4 est installée.
+// LONGUES RÉPONSES : si l'application le demande (stream: true), la réponse est envoyée au fil de l'eau,
+// ce qui évite les coupures de connexion pendant les longues corrections.
 
 const SUPABASE_URL = 'https://lkjijcjogbrzduihewjo.supabase.co';
 // Clé publique « anon » (déjà visible dans index.html : ce n'est pas un secret)
@@ -121,6 +123,8 @@ export async function onRequestPost(context) {
     // On coupe cette réflexion préalable pour garder des cours complets et un coût bas.
     if (model === 'claude-haiku-5-5') body.thinking = { type: 'disabled' };
     if (model === 'claude-sonnet-5-5') body.thinking = { type: 'between_tools' };
+    const auFilDeLEau = payload.stream === true;
+    if (auFilDeLEau) body.stream = true;
 
     async function callAnthropic(b) {
       return fetch('https://api.anthropic.com/v1/messages', {
@@ -155,10 +159,18 @@ export async function onRequestPost(context) {
       }
     }
 
-    const data = await response.json();
     if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
       return repondre(response.status, { error: data?.error?.message || 'Erreur API', status: response.status });
     }
+    if (auFilDeLEau) {
+      // Les morceaux de texte arrivent dès qu'ils sont écrits : la connexion ne reste jamais silencieuse
+      return new Response(response.body, {
+        status: 200,
+        headers: { ...CORS, 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform' }
+      });
+    }
+    const data = await response.json();
     return repondre(200, data);
 
   } catch (err) {
