@@ -1,9 +1,11 @@
-# BRITON SCIENCE — Message chaque matin (Telegram et/ou WhatsApp) avec le crédit API restant
-# Tourne tout seul chaque jour à 07 h 41 (heure d'Abidjan).
+# BRITON SCIENCE — Message (Telegram et/ou WhatsApp) avec le crédit API restant
+# Tourne tout seul deux fois par jour : 07 h 41 et 19 h 41 (heure d'Abidjan).
+# Vous pouvez aussi le lancer à tout moment : Actions > ce programme > Run workflow.
 # Secrets à créer dans GitHub (Settings > Secrets and variables > Actions) :
 #   ANTHROPIC_ADMIN_KEY  : clé d'administration Claude (commence par sk-ant-admin01-)
-#   CREDIT_SOLDE_USD     : solde affiché dans la console Claude le jour du relevé (ex : 18.40)
-#   CREDIT_DATE          : date de ce relevé, format AAAA-MM-JJ (ex : 2026-11-25)
+#   CREDIT_SOLDE_USD     : « Credit balance » lu dans la console Claude (ex : 18.52)
+#   CREDIT_DEPENSE_MOIS  : « Spend this month » lu AU MÊME MOMENT sur la même page (ex : 0.17)
+#   CREDIT_DATE          : date de ce relevé, format AAAA-MM-JJ (ex : 2026-11-27)
 #   TELEGRAM_TOKEN       : jeton du robot Telegram donné par @BotFather
 #   TELEGRAM_CHAT_ID     : numéro envoyé par le robot au premier message (à ajouter ensuite)
 #   (plus tard, si CallMeBot rouvre) WHATSAPP_NUMERO + CALLMEBOT_APIKEY pour WhatsApp
@@ -14,6 +16,7 @@ name: Crédit API sur Telegram-WhatsApp (Briton Science)
 on:
   schedule:
     - cron: '41 7 * * *'
+    - cron: '41 19 * * *'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +31,7 @@ jobs:
         env:
           ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
           CREDIT_SOLDE_USD: ${{ secrets.CREDIT_SOLDE_USD }}
+          CREDIT_DEPENSE_MOIS: ${{ secrets.CREDIT_DEPENSE_MOIS }}
           CREDIT_DATE: ${{ secrets.CREDIT_DATE }}
           WHATSAPP_NUMERO: ${{ secrets.WHATSAPP_NUMERO }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
@@ -37,13 +41,18 @@ jobs:
           TAUX_FCFA: ${{ secrets.TAUX_FCFA }}
         run: |
           node --input-type=module <<'SCRIPT'
-          // BRITON SCIENCE — Message quotidien (Telegram et/ou WhatsApp) : crédit API restant (estimation)
-          // Solde estimé = solde relevé dans la console Claude (CREDIT_SOLDE_USD, à la date CREDIT_DATE)
-          //                − dépenses facturées depuis cette date (API « Cost Report » d'Anthropic).
+          // BRITON SCIENCE — Message (Telegram et/ou WhatsApp) : crédit API restant
+          // Solde = solde lu dans la console Claude (CREDIT_SOLDE_USD)
+          //         − ce qui a été dépensé depuis ce relevé.
+          // Dépensé depuis le relevé = dépenses du mois du relevé jusqu'à maintenant (API Anthropic « Cost Analytics »)
+          //                            − « Spend this month » lu dans la console au même moment (CREDIT_DEPENSE_MOIS).
+          // Le calcul refait donc celui de la console, quelle que soit l'heure du relevé (plus de dépense comptée deux fois).
           const env = process.env;
+          const nombre = v => parseFloat(String(v ?? '').replace(',', '.').replace(/[^0-9.]/g, ''));
           const ADMIN_KEY = (env.ANTHROPIC_ADMIN_KEY || '').trim();
-          const SOLDE_RELEVE = parseFloat(String(env.CREDIT_SOLDE_USD || '').replace(',', '.').replace(/[^0-9.]/g, ''));
-          const DATE_RELEVE = String(env.CREDIT_DATE || '').trim();
+          const SOLDE_RELEVE = nombre(env.CREDIT_SOLDE_USD);
+          const DEPENSE_MOIS_RELEVE = nombre(env.CREDIT_DEPENSE_MOIS);
+          const DATE_RELEVE = String(env.CREDIT_DATE || '').trim().slice(0, 10);
           const TELEPHONE = String(env.WHATSAPP_NUMERO || '').replace(/[^0-9+]/g, '');
           const CALLMEBOT_KEY = String(env.CALLMEBOT_APIKEY || '').trim();
           const TG_TOKEN = String(env.TELEGRAM_TOKEN || '').trim();
@@ -52,8 +61,15 @@ jobs:
           const TAUX = parseFloat(String(env.TAUX_FCFA || '600').replace(',', '.')) || 600;
 
           const usd = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' $';
-          const fcfa = n => Math.round(n * TAUX).toLocaleString('fr-FR').replace(/ | /g, ' ') + ' FCFA';
-          const jour = d => d.toISOString().slice(0, 10);
+          const fcfa = n => Math.round(n * TAUX).toLocaleString('fr-FR').replace(/ | /g, ' ') + ' FCFA';
+          const H = 3600e3, J = 86400e3;
+          const iso = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+          const jour = ms => new Date(ms).toISOString().slice(0, 10);
+          const debutJour = ms => Math.floor(ms / J) * J;
+          const deux = n => String(n).padStart(2, '0');
+          // Heure d'Abidjan = heure UTC
+          const dateHeure = d => deux(d.getUTCDate()) + '/' + deux(d.getUTCMonth() + 1) + ' à ' + deux(d.getUTCHours()) + ' h ' + deux(d.getUTCMinutes());
+          const dateCourte = s => s.slice(8, 10) + '/' + s.slice(5, 7);
 
           async function envoyerWhatsApp(texte) {
             const url = 'https://api.callmebot.com/whatsapp.php?phone=' + encodeURIComponent(TELEPHONE)
@@ -86,32 +102,96 @@ jobs:
             if (!j.ok) throw new Error('Envoi Telegram refusé. Vérifiez TELEGRAM_TOKEN et TELEGRAM_CHAT_ID.');
           }
 
-          async function coutsParJour(debutISO) {
-            const parJour = {};
-            let page = null, tours = 0;
-            do {
-              const u = new URL('https://api.anthropic.com/v1/organizations/cost_report');
-              u.searchParams.set('starting_at', debutISO);
-              u.searchParams.set('bucket_width', '1d');
-              u.searchParams.set('limit', '31');
-              if (page) u.searchParams.set('page', page);
-              const r = await fetch(u, { headers: { 'x-api-key': ADMIN_KEY, 'anthropic-version': '2023-06-01', 'user-agent': 'BritonScience-credit/1.0' } });
-              if (!r.ok) {
-                let detail = '';
-                try { const e = await r.json(); detail = String((e.error && e.error.message) || e.message || '').slice(0, 220); } catch (_) {}
-                if (r.status === 401 || r.status === 403) throw new Error('Clé d\'administration refusée (code ' + r.status + '). Vérifiez ANTHROPIC_ADMIN_KEY. ' + detail);
-                throw new Error('Rapport de coûts indisponible (code ' + r.status + '). ' + detail);
-              }
-              const j = await r.json();
-              for (const b of j.data || []) {
-                let cents = 0;
-                for (const x of b.results || []) cents += parseFloat(x.amount) || 0;
-                const k = String(b.starting_at).slice(0, 10);
-                parJour[k] = (parJour[k] || 0) + cents / 100;
-              }
-              page = j.has_more ? j.next_page : null;
-            } while (page && ++tours < 50);
-            return parJour;
+          // ---------- Lecture des dépenses chez Anthropic ----------
+          async function appelAnthropic(chemin, params, analytique) {
+            const u = new URL('https://api.anthropic.com' + chemin);
+            for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) u.searchParams.set(k, v);
+            const headers = { 'x-api-key': ADMIN_KEY, 'anthropic-version': analytique ? '2026-10-21' : '2023-06-01', 'user-agent': 'BritonScience-credit/2.0' };
+            if (analytique) headers['anthropic-beta'] = 'analytics-usage-cost-2026-08-24';
+            const r = await fetch(u, { headers });
+            if (!r.ok) {
+              let detail = '';
+              try { const e = await r.json(); detail = String((e.error && e.error.message) || e.message || '').slice(0, 220); } catch (_) {}
+              const err = new Error(r.status === 401 || r.status === 403
+                ? 'Clé d\'administration refusée (code ' + r.status + '). Vérifiez ANTHROPIC_ADMIN_KEY. ' + detail
+                : 'Rapport de coûts indisponible (code ' + r.status + '). ' + detail);
+              err.status = r.status;
+              throw err;
+            }
+            return r.json();
+          }
+          const enDollars = centimes => (parseFloat(centimes) || 0) / 100;   // Anthropic donne les montants en cents
+
+          // Source principale : « Cost Analytics » (montants en dollars, à l'heure près, mis à jour au fil de la journée)
+          const analytique = {
+            maj: null,
+            noter(t) { if (t && (!this.maj || t > this.maj)) this.maj = t; },
+            async lire(params, ajouter) {
+              let page = null, tours = 0;
+              do {
+                const j = await appelAnthropic('/v1/organizations/analytics/cost', { ...params, limit: '1000', page }, true);
+                for (const ligne of j.data || []) ajouter(ligne);
+                this.noter(j.data_refreshed_at);
+                page = j.has_more ? j.next_page : null;
+              } while (page && ++tours < 50);
+            },
+            async total(debut, fin) {          // dépense entre debut et fin (fin absente = maintenant)
+              let somme = 0;
+              await this.lire({ starting_at: iso(debut), ending_at: fin ? iso(fin) : undefined }, l => { somme += enDollars(l.cost && l.cost.amount); });
+              return somme;
+            },
+            async parJour(debut, fin) {        // { 'AAAA-MM-JJ': dépense } pour des journées complètes
+              const res = {};
+              await this.lire({ starting_at: iso(debut), ending_at: iso(fin), time_bucket_width: '1d', order_by: 'time', order: 'asc' },
+                l => { const k = String(l.starting_at).slice(0, 10); res[k] = (res[k] || 0) + enDollars(l.cost && l.cost.amount); });
+              return res;
+            },
+          };
+
+          // Source de secours : ancien « Cost Report » (journées complètes seulement : jusqu'à hier soir)
+          const secours = {
+            async parJour(debut, fin) {
+              const finEffective = Math.min(fin || Infinity, debutJour(Date.now()));
+              const res = {};
+              if (!(finEffective > debutJour(debut))) return res;
+              let page = null, tours = 0;
+              do {
+                const j = await appelAnthropic('/v1/organizations/cost_report',
+                  { starting_at: iso(debutJour(debut)), ending_at: iso(finEffective), bucket_width: '1d', limit: '31', page }, false);
+                for (const b of j.data || []) {
+                  const k = String(b.starting_at).slice(0, 10);
+                  for (const x of b.results || []) res[k] = (res[k] || 0) + enDollars(x.amount);
+                }
+                page = j.has_more ? j.next_page : null;
+              } while (page && ++tours < 50);
+              return res;
+            },
+            async total(debut, fin) { return Object.values(await this.parJour(debut, fin)).reduce((a, b) => a + b, 0); },
+          };
+
+          async function calculer(src, maintenant) {
+            const aujourdhui = debutJour(maintenant);
+            const [an, mois] = DATE_RELEVE.split('-').map(Number);
+            // 1) Dépenses depuis le 1er du mois du relevé jusqu'à maintenant (mois par mois)
+            let depuisDebutMois = 0;
+            for (let i = 0, a = an, m = mois - 1; i < 14; i++) {
+              const debut = Date.UTC(a, m, 1), suivant = Date.UTC(a, m + 1, 1);
+              if (debut > maintenant) break;
+              if (suivant <= maintenant) depuisDebutMois += await src.total(debut, suivant);
+              else if (maintenant - debut >= H) depuisDebutMois += await src.total(debut, null);
+              if (++m > 11) { m = 0; a++; }
+            }
+            // 2) Dépense du mois déjà comptée dans le solde lu dans la console
+            let dejaCompte = DEPENSE_MOIS_RELEVE, approximatif = false;
+            if (!(dejaCompte >= 0)) {   // secret absent : on suppose le relevé fait à 0 h le jour CREDIT_DATE
+              const debutMois = Date.UTC(an, mois - 1, 1), jourReleve = Date.parse(DATE_RELEVE + 'T00:00:00Z');
+              dejaCompte = jourReleve - debutMois >= H ? await src.total(debutMois, jourReleve) : 0;
+              approximatif = true;
+            }
+            // 3) Les 7 derniers jours complets, et aujourd'hui depuis minuit
+            const jours = await src.parJour(aujourdhui - 7 * J, aujourdhui);
+            const auj = src === analytique && maintenant - aujourdhui >= H ? await src.total(aujourdhui, null) : null;
+            return { depense: Math.max(0, depuisDebutMois - dejaCompte), jours, auj, approximatif };
           }
 
           async function main() {
@@ -124,33 +204,40 @@ jobs:
             if (!whatsapp && !telegram) manque.push('TELEGRAM_TOKEN (ou bien WHATSAPP_NUMERO + CALLMEBOT_APIKEY)');
             if (manque.length) throw new Error('Secrets manquants ou incorrects : ' + manque.join(', '));
 
-            const maintenant = new Date();
-            const demain = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), maintenant.getUTCDate() + 1));
-            const aujourdhui = jour(maintenant);
-            const hier = jour(new Date(demain.getTime() - 2 * 86400000));
-
+            const maintenant = Date.now();
+            const aujourdhui = debutJour(maintenant);
             let texte, alerte = false;
             try {
-              const debut = DATE_RELEVE + 'T00:00:00Z';
-              const minuitAujourdhui = Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), maintenant.getUTCDate());
-              // Anthropic ne donne que des journées complètes (UTC) : rien à soustraire le jour même du relevé
-              const parJour = new Date(debut).getTime() < minuitAujourdhui ? await coutsParJour(debut) : {};
-              const depense = Object.values(parJour).reduce((a, b) => a + b, 0);
-              const solde = SOLDE_RELEVE - depense;
-              // Moyenne des 7 derniers jours complets (sans aujourd'hui) depuis le relevé
-              const jours = Object.keys(parJour).filter(k => k < aujourdhui).sort().slice(-7);
-              const moyenne = jours.length ? jours.reduce((a, k) => a + parJour[k], 0) / jours.length : 0;
+              let r, modeSecours = false;
+              try { r = await calculer(analytique, maintenant); }
+              catch (e) {
+                console.error('Cost Analytics indisponible (' + e.message + ') : passage au mode secours.');
+                modeSecours = true;
+                r = await calculer(secours, maintenant);
+              }
+              const solde = SOLDE_RELEVE - r.depense;
+              const sept = [];
+              for (let k = 7; k >= 1; k--) sept.push(r.jours[jour(aujourdhui - k * J)] || 0);
+              const hier = sept[6];
+              const moyenne = sept.reduce((a, b) => a + b, 0) / 7;
               const restants = moyenne > 0 ? Math.floor(Math.max(solde, 0) / moyenne) : null;
               alerte = solde < SEUIL;
+              const maj = !modeSecours && analytique.maj ? new Date(analytique.maj) : null;
               const lignes = [
                 '*Briton Science – Crédit API* 🤖',
-                '💰 Solde estimé : *' + usd(solde) + '* (≈ ' + fcfa(Math.max(solde, 0)) + ')',
-                '📉 Dépensé hier : ' + usd(parJour[hier] || 0),
-                moyenne > 0 ? '📊 Moyenne : ' + usd(moyenne) + '/jour → environ ' + restants + ' jour' + (restants > 1 ? 's' : '') + ' restant' + (restants > 1 ? 's' : '') : '📊 La moyenne par jour s\'affichera dès demain.',
-                'ℹ️ Dépenses comptées jusqu\'à hier soir (relevé du ' + DATE_RELEVE + ' : ' + usd(SOLDE_RELEVE) + ').',
-                alerte ? '⚠️ *Crédit bas* (moins de ' + usd(SEUIL) + ') : rechargez sur platform.claude.com/settings/billing puis mettez à jour CREDIT_SOLDE_USD et CREDIT_DATE.'
+                '💰 Solde : *' + usd(solde) + '* (≈ ' + fcfa(Math.max(solde, 0)) + ')',
+                modeSecours ? '🕒 Mode secours : dépenses comptées jusqu\'à hier soir.'
+                  : maj ? '🕒 Dépenses connues jusqu\'au ' + dateHeure(maj) + ' (heure d\'Abidjan)'
+                  : '🕒 Anthropic n\'a pas encore de données pour cette période.',
+                (r.auj !== null ? '📅 Aujourd\'hui : ' + usd(r.auj) + ' · ' : '📅 ') + 'Hier : ' + usd(hier),
+                moyenne > 0 ? '📊 Moyenne sur 7 jours : ' + usd(moyenne) + '/jour → environ ' + restants + ' jour' + (restants > 1 ? 's' : '') + ' restant' + (restants > 1 ? 's' : '')
+                            : '📊 Aucune dépense ces 7 derniers jours.',
+                'ℹ️ Relevé console du ' + dateCourte(DATE_RELEVE) + ' : ' + usd(SOLDE_RELEVE)
+                  + (r.approximatif ? '' : ' (dépense du mois ' + usd(DEPENSE_MOIS_RELEVE) + ')') + ' ; dépensé depuis : ' + usd(r.depense) + '.',
+                r.approximatif ? '⚙️ Pour un solde exact, ajoutez le secret CREDIT_DEPENSE_MOIS (« Spend this month » lu dans la console en même temps que le solde).' : null,
+                alerte ? '⚠️ *Crédit bas* (moins de ' + usd(SEUIL) + ') : rechargez sur platform.claude.com/settings/billing puis mettez à jour CREDIT_SOLDE_USD, CREDIT_DEPENSE_MOIS et CREDIT_DATE.'
                        : '✅ Tout va bien.',
-              ];
+              ].filter(Boolean);
               texte = lignes.join('\n');
             } catch (e) {
               alerte = true;
