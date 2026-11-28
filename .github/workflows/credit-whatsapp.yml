@@ -1,5 +1,6 @@
 # BRITON SCIENCE — Message (Telegram et/ou WhatsApp) avec le crédit API restant
-# Tourne tout seul deux fois par jour : 07 h 41 et 19 h 41 (heure d'Abidjan).
+# Lancé à l'heure exacte deux fois par jour (07 h 41 et 19 h 41, heure d'Abidjan) par le programme Cloudflare
+# « briton-reveil » (les tâches programmées de GitHub arrivaient avec plusieurs heures de retard).
 # Vous pouvez aussi le lancer à tout moment : Actions > ce programme > Run workflow.
 # Secrets à créer dans GitHub (Settings > Secrets and variables > Actions) :
 #   ANTHROPIC_ADMIN_KEY  : clé d'administration Claude (commence par sk-ant-admin01-)
@@ -14,9 +15,6 @@
 name: Crédit API sur Telegram-WhatsApp (Briton Science)
 
 on:
-  schedule:
-    - cron: '41 7 * * *'
-    - cron: '41 19 * * *'
   workflow_dispatch:
 
 permissions:
